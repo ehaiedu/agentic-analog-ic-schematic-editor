@@ -4,8 +4,20 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 3
     groups:
-      npm-security-and-maintenance:
+      npm-minor-and-patch:
+        applies-to: version-updates
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: vinext
+        versions:
+          - ">=0.1.0"
