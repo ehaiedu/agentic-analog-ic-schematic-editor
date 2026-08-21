@@ -1,0 +1,68 @@
+{
+  "name": "VSE-Core-1",
+  "keymap": {
+    "createInstance": "i",
+    "createWire": "w",
+    "copy": "c",
+    "stretch": "m",
+    "properties": "q",
+    "directTextEdit": "t",
+    "commandOptions": "F3",
+    "partialSelection": "F4",
+    "rotate": "r",
+    "mirrorX": "x",
+    "delete": "Delete",
+    "finish": "Enter",
+    "cancel": "Escape"
+  },
+  "mouse": {
+    "verticalPan": "wheel",
+    "horizontalPan": "shift+wheel",
+    "zoom": "ctrl+wheel",
+    "rotateDuringPlacement": "middle-click"
+  },
+  "grid": {
+    "snap": 5,
+    "display": 20,
+    "major": 100,
+    "temporaryDisableModifier": "alt"
+  },
+  "wire": {
+    "defaultDrawMode": "route",
+    "defaultStretchRouteMethod": "full",
+    "normalWidth": 1.45,
+    "hitTolerancePixels": 8,
+    "snapTolerancePixels": 18
+  },
+  "selection": {
+    "partialSelection": false,
+    "hitTestPriority": [
+      "marker",
+      "partial-control-point",
+      "pin",
+      "wire-endpoint",
+      "net-label",
+      "wire-segment",
+      "instance",
+      "note"
+    ]
+  },
+  "naming": {
+    "instanceStartIndex": 1,
+    "netNameCaseSensitive": true,
+    "globalNetSuffix": "!"
+  },
+  "text": {
+    "keepReadable": true,
+    "fontFamily": "Segoe UI, Microsoft YaHei UI, sans-serif"
+  },
+  "colors": {
+    "wire": "#484644",
+    "hover": "#c43b4d",
+    "selection": "#5b9bd5",
+    "snap": "#107c10",
+    "staleConnectivity": "#c77700",
+    "error": "#d13438",
+    "warning": "#c77700"
+  }
+}

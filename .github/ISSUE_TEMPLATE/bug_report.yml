@@ -1,0 +1,44 @@
+name: 缺陷报告
+description: 报告可复现的错误或行为回归
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 安全漏洞请使用 Private vulnerability reporting，不要在此公开。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题描述
+      description: 说明实际行为、预期行为及其影响。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开...
+        2. 执行...
+        3. 观察到...
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: 版本或提交
+      description: 提供分支、提交哈希或版本号。
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      description: 操作系统、浏览器及 Node.js 版本。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 补充证据
+      description: 可附最小工程、日志或截图，但请先移除账号、路径和其他隐私。
