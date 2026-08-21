@@ -60,8 +60,6 @@ npm run deploy:lan
 npm run start:lan --prefix ..\analog-agent-studio-lan\app
 ```
 
-`deploy:lan` 会拒绝没有提交或仍有未提交修改的源仓库，避免部署版悄悄漏掉代码。它对已有部署执行 `git pull --ff-only`、`npm ci` 和生产构建；数据库、日志和环境文件不进入 Git。Windows 下更新前需要先停止旧服务，避免运行中的 Node/Workerd 锁住依赖文件。
-
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。第三方符号资源的许可声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
