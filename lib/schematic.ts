@@ -629,7 +629,7 @@ export function createDeviceNode(
 }
 
 export function createEmptyDocument(
-  project = "analog-studio",
+  project = "analog-agent-studio",
   cell = "untitled",
 ): SchematicDocument {
   return {

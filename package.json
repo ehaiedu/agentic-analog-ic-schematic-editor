@@ -1,8 +1,8 @@
 {
-  "name": "analog-studio-vse-core",
+  "name": "analog-agent-studio",
   "version": "1.0.0-dev.1",
   "private": true,
-  "description": "Browser-based analog IC schematic editor with ERC and deterministic netlist export",
+  "description": "Agent-native schematic editor for a new analog IC design paradigm",
   "engines": {
     "node": ">=22.13.0"
   },

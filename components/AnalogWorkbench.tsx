@@ -950,13 +950,13 @@ export function AnalogWorkbench({
     >
       <header className="app-header">
         <div className="quick-access" aria-label="快速访问工具栏">
-          <div className="app-symbol" title="Analog Studio"><Waves size={16} /></div>
+          <div className="app-symbol" title="Analog Agent Studio"><Waves size={16} /></div>
           <button title="保存并返回项目列表" onClick={() => void returnToProjects()}><ArrowLeft size={16} /></button>
           <button title="保存项目" onClick={() => void saveProject()}><Save size={16} /></button>
           <button title="撤销" onClick={() => editorRef.current?.undo()}><Undo2 size={16} /></button>
           <button title="重做" onClick={() => editorRef.current?.redo()}><Redo2 size={16} /></button>
         </div>
-        <div className="window-title"><strong>{document.cell}</strong><span>— {projectName ?? document.project} · Analog Studio</span></div>
+        <div className="window-title"><strong>{document.cell}</strong><span>— {projectName ?? document.project} · Analog Agent Studio</span></div>
         <div className="window-tools">
           <span className={`local-state save-${saveState}`}><span className="status-dot" />{projectName ?? document.project}</span>
           <button className="header-action" onClick={() => setAgentOpen((value) => !value)}><Bot size={15} /> New Agent</button>

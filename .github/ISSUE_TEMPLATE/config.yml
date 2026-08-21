@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: 私下报告安全漏洞
-    url: https://github.com/ehaiedu/agent-anlog-studio/security/advisories/new
+    url: https://github.com/ehaiedu/analog-agent-studio/security/advisories/new
     about: 请勿在公开 Issue 中披露可利用细节。

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Analog Studio",
+  title: "Analog Agent Studio",
   description: "面向模拟 IC 的多用户原理图编辑与项目管理工作台",
 };
 
