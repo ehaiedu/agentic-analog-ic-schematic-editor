@@ -1,8 +1,8 @@
 {
-  "name": "analog-agent-studio",
+  "name": "agentic-analog-ic-schematic-editor",
   "version": "1.0.0-dev.1",
   "private": true,
-  "description": "Agent-native schematic editor for a new analog IC design paradigm",
+  "description": "An agent-native schematic editor for analog IC design",
   "engines": {
     "node": ">=22.13.0"
   },

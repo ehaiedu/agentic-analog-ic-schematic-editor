@@ -256,7 +256,7 @@ function renderNetlist(
   connectivity: ReturnType<typeof extractConnectivity>,
 ): string {
   const cell = cleanIdentifier(document.cell, "untitled");
-  const project = document.project.trim() || "analog-agent-studio";
+  const project = document.project.trim() || "agentic-analog-ic-schematic-editor";
   const globals = collectGlobals(document, connectivity);
   const globalSet = new Set(globals);
   const ports = collectPorts(document, connectivity).filter((port) => !globalSet.has(port));

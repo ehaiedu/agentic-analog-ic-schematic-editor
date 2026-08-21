@@ -629,7 +629,7 @@ export function createDeviceNode(
 }
 
 export function createEmptyDocument(
-  project = "analog-agent-studio",
+  project = "agentic-analog-ic-schematic-editor",
   cell = "untitled",
 ): SchematicDocument {
   return {
@@ -811,7 +811,7 @@ export function createDemoDocument(): SchematicDocument {
   ];
 
   return {
-    ...createEmptyDocument("analog_studio", "cmos_inverter"),
+    ...createEmptyDocument("agentic-analog-ic-schematic-editor", "cmos_inverter"),
     nodes,
     edges,
   };

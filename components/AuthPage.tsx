@@ -102,7 +102,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       <section className="account-brand-panel">
         <div className="account-brand">
           <span className="account-brand-mark"><Waves size={24} /></span>
-          <div><strong>Analog Agent Studio</strong><span>模拟 IC 原理图工作台</span></div>
+          <div><strong>Agentic Analog IC Schematic Editor</strong><span>模拟 IC 原理图工作台</span></div>
         </div>
         <div className="account-intro">
           <p className="account-eyebrow">SCHEMATIC DESIGN ENVIRONMENT</p>
@@ -119,10 +119,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
 
       <section className="account-form-panel">
         <div className="account-form-wrap">
-          <div className="account-mobile-brand"><Waves size={18} /> Analog Agent Studio</div>
+          <div className="account-mobile-brand"><Waves size={18} /><span>Agentic Analog IC Schematic Editor</span></div>
           <div className="account-form-heading">
             <span className="account-step">{isRegister ? "创建工作区账户" : "欢迎回来"}</span>
-            <h2>{isRegister ? "注册账户" : "登录 Analog Agent Studio"}</h2>
+            <h2>{isRegister ? "注册账户" : "登录 Agentic Analog IC Schematic Editor"}</h2>
             <p>{isRegister ? "注册后会自动生成一个 CMOS 反相器示例项目。" : "使用你的账户继续管理和编辑原理图项目。"}</p>
           </div>
 

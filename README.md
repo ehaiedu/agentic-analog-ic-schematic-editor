@@ -1,8 +1,8 @@
-# Analog Agent Studio
+# Agentic Analog IC Schematic Editor
 
-我们的目标是打造一款天然具备 Agent 逻辑的原理图编辑工具，颠覆传统的 Analog IC 设计范式。
+Agentic Analog IC Schematic Editor是一款天然具备 Agent 逻辑的原理图编辑工具，旨在颠覆传统的 Analog IC 设计范式。
 
-![Analog Agent Studio 原理图工作台](docs/assets/analog-agent-studio-workbench.png)
+![Agentic Analog IC Schematic Editor 原理图工作台](docs/assets/agentic-analog-ic-schematic-editor-workbench.png)
 
 ## 局域网部署
 
@@ -17,7 +17,7 @@ npm run deploy:lan
 默认结果：
 
 ```text
-../analog-agent-studio-lan/
+../agentic-analog-ic-schematic-editor-lan/
 ├─ app/                 Git 管理的独立部署克隆
 ├─ data/wrangler/       账户和项目数据库，升级时不会覆盖
 ├─ logs/
@@ -27,7 +27,7 @@ npm run deploy:lan
 进入部署版并启动：
 
 ```powershell
-cd ..\analog-agent-studio-lan\app
+cd ..\agentic-analog-ic-schematic-editor-lan\app
 npm run start:lan
 ```
 
@@ -42,7 +42,7 @@ http://部署电脑的局域网IPv4地址:3000
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-lan.ps1 `
   -Port 3000 `
-  -DataPath "C:\AnalogAgentStudioData\wrangler"
+  -DataPath "C:\AgenticAnalogICSchematicEditorData\wrangler"
 ```
 
 Windows 防火墙需单独允许 TCP 3000，只建议为“专用网络 / 本地子网”放行；部署脚本不会自动修改系统安全设置。
@@ -57,7 +57,7 @@ Windows 防火墙需单独允许 TCP 3000，只建议为“专用网络 / 本地
 git pull --ff-only
 # 先在正在运行 start:lan 的终端按 Ctrl+C 停止旧版本
 npm run deploy:lan
-npm run start:lan --prefix ..\analog-agent-studio-lan\app
+npm run start:lan --prefix ..\agentic-analog-ic-schematic-editor-lan\app
 ```
 
 ## 许可证

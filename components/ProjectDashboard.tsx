@@ -167,12 +167,12 @@ export function ProjectDashboard() {
     }
   };
 
-  const initials = user?.username.slice(0, 2).toUpperCase() ?? "AS";
+  const initials = user?.username.slice(0, 2).toUpperCase() ?? "AI";
 
   return (
     <main className="projects-shell">
       <header className="projects-topbar">
-        <Link className="projects-brand" href="/projects"><span><Waves size={18} /></span><strong>Analog Agent Studio</strong></Link>
+        <Link className="projects-brand" href="/projects"><span><Waves size={18} /></span><strong>Agentic Analog IC Schematic Editor</strong></Link>
         <div className="projects-topbar-center">项目工作区</div>
         <div className="projects-user"><span className="projects-user-copy"><strong>{user?.username ?? "正在载入"}</strong><small>本地账户</small></span><span className="projects-avatar">{initials}</span><button title="退出登录" onClick={logout}><LogOut size={16} /></button></div>
       </header>

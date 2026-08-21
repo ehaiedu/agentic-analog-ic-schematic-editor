@@ -1,6 +1,6 @@
 # 参与贡献
 
-Analog Agent Studio 目前处于 V1.0 前的开发阶段。欢迎提交缺陷报告、设计讨论、文档和代码改进。
+Agentic Analog IC Schematic Editor 目前处于 V1.0 前的开发阶段。欢迎提交缺陷报告、设计讨论、文档和代码改进。
 
 ## 开始之前
 

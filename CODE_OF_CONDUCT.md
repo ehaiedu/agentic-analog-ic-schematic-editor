@@ -1,6 +1,6 @@
 # 社区行为准则
 
-我们希望 Analog Agent Studio 的协作环境专业、尊重事实，并让不同背景和经验的参与者都能安全地参与。
+我们希望 Agentic Analog IC Schematic Editor 的协作环境专业、尊重事实，并让不同背景和经验的参与者都能安全地参与。
 
 ## 期待的行为
 

@@ -60,7 +60,7 @@ if ($EnvFile) {
   $Arguments += @("--env-file", $ResolvedEnvFile)
 }
 
-Write-Host "Analog Agent Studio LAN"
+Write-Host "Agentic Analog IC Schematic Editor LAN"
 Write-Host "  Listen  : http://${BindAddress}:$Port"
 Write-Host "  Data    : $DataPath"
 if ($BindAddress -eq "0.0.0.0") {

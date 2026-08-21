@@ -15,7 +15,7 @@ if ($DirtyFiles.Count -gt 0) {
   throw "The source worktree has uncommitted changes. Commit them before deploying so the clone cannot silently miss files."
 }
 if (-not $InstallRoot) {
-  $InstallRoot = Join-Path (Split-Path $SourceRoot -Parent) "analog-agent-studio-lan"
+  $InstallRoot = Join-Path (Split-Path $SourceRoot -Parent) "agentic-analog-ic-schematic-editor-lan"
 }
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $AppRoot = Join-Path $InstallRoot "app"

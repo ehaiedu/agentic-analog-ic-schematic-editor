@@ -138,6 +138,17 @@ const IDLE_COMMAND_STATE: CanvasCommandState = {
 
 type SaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
 
+const STORAGE_KEYS = {
+  layout: "agentic-analog-ic-schematic-editor.layout.v1",
+  recovery: "agentic-analog-ic-schematic-editor.recovery.v1",
+  unsynced: "agentic-analog-ic-schematic-editor.unsynced",
+} as const;
+const LEGACY_STORAGE_KEYS = {
+  layout: "analog-studio.layout.v1",
+  recovery: "analog-studio.recovery.v1",
+  unsynced: "analog-studio.unsynced",
+} as const;
+
 export interface AnalogWorkbenchProps {
   initialDocument?: SchematicDocument;
   projectId?: string;
@@ -373,19 +384,40 @@ export function AnalogWorkbench({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const stored = localStorage.getItem("analog-studio.layout.v1");
-      if (!stored) return;
-      try {
-        const parsed = JSON.parse(stored) as Partial<LayoutState>;
-        const restored = {
-          leftWidth: Math.min(420, Math.max(180, parsed.leftWidth ?? DEFAULT_LAYOUT.leftWidth)),
-          rightWidth: Math.min(560, Math.max(280, parsed.rightWidth ?? DEFAULT_LAYOUT.rightWidth)),
-          bottomHeight: Math.min(420, Math.max(96, parsed.bottomHeight ?? DEFAULT_LAYOUT.bottomHeight)),
-        };
-        layoutRef.current = restored;
-        setLayout(restored);
-      } catch {
-        localStorage.removeItem("analog-studio.layout.v1");
+      for (const key of ["recovery", "unsynced"] as const) {
+        const legacyValue = localStorage.getItem(LEGACY_STORAGE_KEYS[key]);
+        if (legacyValue === null) continue;
+        if (localStorage.getItem(STORAGE_KEYS[key]) === null) {
+          try {
+            localStorage.setItem(STORAGE_KEYS[key], legacyValue);
+          } catch {
+            continue;
+          }
+        }
+        localStorage.removeItem(LEGACY_STORAGE_KEYS[key]);
+      }
+
+      const layoutCandidates = [
+        [STORAGE_KEYS.layout, localStorage.getItem(STORAGE_KEYS.layout)],
+        [LEGACY_STORAGE_KEYS.layout, localStorage.getItem(LEGACY_STORAGE_KEYS.layout)],
+      ] as const;
+      for (const [key, stored] of layoutCandidates) {
+        if (!stored) continue;
+        try {
+          const parsed = JSON.parse(stored) as Partial<LayoutState>;
+          const restored = {
+            leftWidth: Math.min(420, Math.max(180, parsed.leftWidth ?? DEFAULT_LAYOUT.leftWidth)),
+            rightWidth: Math.min(560, Math.max(280, parsed.rightWidth ?? DEFAULT_LAYOUT.rightWidth)),
+            bottomHeight: Math.min(420, Math.max(96, parsed.bottomHeight ?? DEFAULT_LAYOUT.bottomHeight)),
+          };
+          layoutRef.current = restored;
+          setLayout(restored);
+          localStorage.setItem(STORAGE_KEYS.layout, JSON.stringify(restored));
+          localStorage.removeItem(LEGACY_STORAGE_KEYS.layout);
+          return;
+        } catch {
+          localStorage.removeItem(key);
+        }
       }
     });
     return () => window.cancelAnimationFrame(frame);
@@ -435,8 +467,10 @@ export function AnalogWorkbench({
     const serialized = serializeSchematic(saveCandidate);
 
     if (!projectId) {
-      localStorage.setItem("analog-studio.unsynced", serialized);
-      localStorage.removeItem("analog-studio.recovery.v1");
+      localStorage.setItem(STORAGE_KEYS.unsynced, serialized);
+      localStorage.removeItem(STORAGE_KEYS.recovery);
+      localStorage.removeItem(LEGACY_STORAGE_KEYS.unsynced);
+      localStorage.removeItem(LEGACY_STORAGE_KEYS.recovery);
       documentRef.current = saveCandidate;
       setDocument(saveCandidate);
       editorRef.current?.setDocumentMetadata(saveCandidate);
@@ -503,7 +537,8 @@ export function AnalogWorkbench({
     const serialized = serializeSchematic(current);
     if (serialized === lastSavedDocumentRef.current) return;
     if (!projectId) {
-      localStorage.setItem("analog-studio.recovery.v1", serialized);
+      localStorage.setItem(STORAGE_KEYS.recovery, serialized);
+      localStorage.removeItem(LEGACY_STORAGE_KEYS.recovery);
       setSavedAt("已写入本机恢复副本");
       return;
     }
@@ -805,7 +840,8 @@ export function AnalogWorkbench({
   };
 
   const persistLayout = (next: LayoutState) => {
-    localStorage.setItem("analog-studio.layout.v1", JSON.stringify(next));
+    localStorage.setItem(STORAGE_KEYS.layout, JSON.stringify(next));
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.layout);
   };
 
   const setPanelSize = (target: ResizeTarget, value: number, persist = false) => {
@@ -950,17 +986,20 @@ export function AnalogWorkbench({
     >
       <header className="app-header">
         <div className="quick-access" aria-label="快速访问工具栏">
-          <div className="app-symbol" title="Analog Agent Studio"><Waves size={16} /></div>
+          <div className="app-symbol" title="Agentic Analog IC Schematic Editor" aria-label="Agentic Analog IC Schematic Editor"><Waves size={16} /></div>
           <button title="保存并返回项目列表" onClick={() => void returnToProjects()}><ArrowLeft size={16} /></button>
           <button title="保存项目" onClick={() => void saveProject()}><Save size={16} /></button>
           <button title="撤销" onClick={() => editorRef.current?.undo()}><Undo2 size={16} /></button>
           <button title="重做" onClick={() => editorRef.current?.redo()}><Redo2 size={16} /></button>
         </div>
-        <div className="window-title"><strong>{document.cell}</strong><span>— {projectName ?? document.project} · Analog Agent Studio</span></div>
+        <div className="window-title" title={`${document.cell} — ${projectName ?? document.project} · Agentic Analog IC Schematic Editor`}>
+          <span className="window-context"><strong>{document.cell}</strong> — {projectName ?? document.project}</span>
+          <span className="window-brand">Agentic Analog IC Schematic Editor</span>
+        </div>
         <div className="window-tools">
-          <span className={`local-state save-${saveState}`}><span className="status-dot" />{projectName ?? document.project}</span>
+          <span className={`local-state save-${saveState}`}><span className="status-dot" /><span className="local-state-label">{projectName ?? document.project}</span></span>
           <button className="header-action" onClick={() => setAgentOpen((value) => !value)}><Bot size={15} /> New Agent</button>
-          <span className="user-avatar" aria-label={username || "账户"} title={username || "账户"}>{username.slice(0, 2).toUpperCase() || "AS"}</span>
+          <span className="user-avatar" aria-label={username || "账户"} title={username || "账户"}>{username.slice(0, 2).toUpperCase() || "AI"}</span>
         </div>
       </header>
 

@@ -21,7 +21,7 @@ import {
 } from "../lib/schematic";
 import { createX6NodeMetadata } from "../components/x6Symbols";
 
-const expectedSpectre = `// analog_studio / cmos_inverter
+const expectedSpectre = `// agentic-analog-ic-schematic-editor / cmos_inverter
 simulator lang=spectre
 global 0 VDD
 subckt cmos_inverter VIN VOUT
@@ -30,7 +30,7 @@ subckt cmos_inverter VIN VOUT
 ends cmos_inverter
 `;
 
-const expectedSpice = `* analog_studio / cmos_inverter
+const expectedSpice = `* agentic-analog-ic-schematic-editor / cmos_inverter
 .global VDD
 .subckt cmos_inverter VIN VOUT
 M1 VOUT VIN 0 0 nmos W=10u L=180n M=1 NF=1

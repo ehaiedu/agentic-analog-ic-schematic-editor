@@ -3,7 +3,8 @@ import { ensureDatabase } from "../db/runtime";
 import { isDevelopmentAccountUsername } from "./developmentAccount";
 import { isDevelopmentAccountRequest } from "./developmentAccountGate.server";
 
-export const SESSION_COOKIE = "analog_studio_session";
+export const SESSION_COOKIE = "agentic_analog_ic_schematic_editor_session";
+const LEGACY_SESSION_COOKIE = "analog_studio_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 14;
 const PASSWORD_ITERATIONS = 600_000;
 
@@ -119,9 +120,21 @@ function cookieValue(request: Request, name: string): string | null {
   return null;
 }
 
-export function sessionCookie(token: string, request: Request, maxAge = SESSION_SECONDS): string {
+function namedSessionCookie(name: string, token: string, request: Request, maxAge: number): string {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  return `${name}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+export function sessionCookie(token: string, request: Request, maxAge = SESSION_SECONDS): string {
+  return namedSessionCookie(SESSION_COOKIE, token, request, maxAge);
+}
+
+function requestSessionTokens(request: Request): string[] {
+  const tokens = [
+    cookieValue(request, SESSION_COOKIE),
+    cookieValue(request, LEGACY_SESSION_COOKIE),
+  ].filter((token): token is string => Boolean(token));
+  return [...new Set(tokens)];
 }
 
 export async function createSession(request: Request, userId: string): Promise<string> {
@@ -135,32 +148,40 @@ export async function createSession(request: Request, userId: string): Promise<s
 }
 
 export async function getSessionUser(request: Request): Promise<AuthUser | null> {
-  const token = cookieValue(request, SESSION_COOKIE);
-  if (!token) return null;
+  const tokens = requestSessionTokens(request);
+  if (tokens.length === 0) return null;
   await ensureDatabase();
-  const row = await getD1().prepare(`SELECT users.id, users.username, users.normalized_username, users.created_at
-    FROM sessions
-    INNER JOIN users ON users.id = sessions.user_id
-    WHERE sessions.token_hash = ? AND sessions.expires_at > ?`)
-    .bind(await digest(token), Date.now())
-    .first<UserRow>();
-  if (!row) return null;
-  if (
-    isDevelopmentAccountUsername(row.normalized_username)
-    && !isDevelopmentAccountRequest(request)
-  ) {
-    return null;
+  for (const token of tokens) {
+    const row = await getD1().prepare(`SELECT users.id, users.username, users.normalized_username, users.created_at
+      FROM sessions
+      INNER JOIN users ON users.id = sessions.user_id
+      WHERE sessions.token_hash = ? AND sessions.expires_at > ?`)
+      .bind(await digest(token), Date.now())
+      .first<UserRow>();
+    if (!row) continue;
+    if (
+      isDevelopmentAccountUsername(row.normalized_username)
+      && !isDevelopmentAccountRequest(request)
+    ) {
+      return null;
+    }
+    return { id: row.id, username: row.username, createdAt: row.created_at };
   }
-  return { id: row.id, username: row.username, createdAt: row.created_at };
+  return null;
 }
 
-export async function destroySession(request: Request): Promise<string> {
-  const token = cookieValue(request, SESSION_COOKIE);
-  if (token) {
+export async function destroySession(request: Request): Promise<string[]> {
+  const tokens = requestSessionTokens(request);
+  if (tokens.length > 0) {
     await ensureDatabase();
-    await getD1().prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await digest(token)).run();
+    for (const token of tokens) {
+      await getD1().prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await digest(token)).run();
+    }
   }
-  return sessionCookie("", request, 0);
+  return [
+    sessionCookie("", request, 0),
+    namedSessionCookie(LEGACY_SESSION_COOKIE, "", request, 0),
+  ];
 }
 
 export function json(data: unknown, init: ResponseInit = {}): Response {
