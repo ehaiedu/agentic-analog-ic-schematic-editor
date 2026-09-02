@@ -20,3 +20,9 @@ export function getD1(): D1Database {
   }
   return env.DB;
 }
+
+export function getAgentMedia(): R2Bucket {
+  const bucket = (env as unknown as { AGENT_MEDIA?: R2Bucket }).AGENT_MEDIA;
+  if (!bucket) throw new Error("Cloudflare R2 binding `AGENT_MEDIA` is unavailable.");
+  return bucket;
+}

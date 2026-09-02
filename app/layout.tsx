@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agentic Analog IC Schematic Editor",
-  description: "天然具备 Agent 逻辑的 Analog IC 原理图编辑工具",
+  title: "Analog Studio",
+  description: "面向模拟 IC 的多用户原理图编辑与项目管理工作台",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

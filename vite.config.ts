@@ -38,6 +38,66 @@ export default defineConfig(async () => {
     compatibility_flags: ["nodejs_compat"],
     vars: {
       LOCAL_DEV_ACCOUNT_ENABLED: localDevelopmentAccountEnabled ? "true" : "false",
+      ...(process.env.SPEG_API_BASE_URL
+        ? { SPEG_API_BASE_URL: process.env.SPEG_API_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_EXECUTION_BACKEND
+        ? { SPEG_EXECUTION_BACKEND: process.env.SPEG_EXECUTION_BACKEND }
+        : {}),
+      ...(process.env.SPEG_MULTIMODAL_BASE_URL
+        ? { SPEG_MULTIMODAL_BASE_URL: process.env.SPEG_MULTIMODAL_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_MULTIMODAL_MODEL
+        ? { SPEG_MULTIMODAL_MODEL: process.env.SPEG_MULTIMODAL_MODEL }
+        : {}),
+      ...(process.env.SPEG_MULTIMODAL_API_TOKEN
+        ? { SPEG_MULTIMODAL_API_TOKEN: process.env.SPEG_MULTIMODAL_API_TOKEN }
+        : {}),
+      ...(process.env.SPEG_AGENT_BASE_URL
+        ? { SPEG_AGENT_BASE_URL: process.env.SPEG_AGENT_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_AGENT_MODEL
+        ? { SPEG_AGENT_MODEL: process.env.SPEG_AGENT_MODEL }
+        : {}),
+      ...(process.env.SPEG_AGENT_API_TOKEN
+        ? { SPEG_AGENT_API_TOKEN: process.env.SPEG_AGENT_API_TOKEN }
+        : {}),
+      ...(process.env.SPEG_QWEN38_BASE_URL
+        ? { SPEG_QWEN38_BASE_URL: process.env.SPEG_QWEN38_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_QWEN38_MODEL
+        ? { SPEG_QWEN38_MODEL: process.env.SPEG_QWEN38_MODEL }
+        : {}),
+      ...(process.env.SPEG_QWEN38_API_TOKEN
+        ? { SPEG_QWEN38_API_TOKEN: process.env.SPEG_QWEN38_API_TOKEN }
+        : {}),
+      ...(process.env.SPEG_QWEN36_BASE_URL
+        ? { SPEG_QWEN36_BASE_URL: process.env.SPEG_QWEN36_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_QWEN36_MODEL
+        ? { SPEG_QWEN36_MODEL: process.env.SPEG_QWEN36_MODEL }
+        : {}),
+      ...(process.env.SPEG_QWEN36_API_TOKEN
+        ? { SPEG_QWEN36_API_TOKEN: process.env.SPEG_QWEN36_API_TOKEN }
+        : {}),
+      ...(process.env.SPEG_QWEN35_BASE_URL
+        ? { SPEG_QWEN35_BASE_URL: process.env.SPEG_QWEN35_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_QWEN35_MODEL
+        ? { SPEG_QWEN35_MODEL: process.env.SPEG_QWEN35_MODEL }
+        : {}),
+      ...(process.env.SPEG_QWEN35_API_TOKEN
+        ? { SPEG_QWEN35_API_TOKEN: process.env.SPEG_QWEN35_API_TOKEN }
+        : {}),
+      ...(process.env.SPEG_VISION_BASE_URL
+        ? { SPEG_VISION_BASE_URL: process.env.SPEG_VISION_BASE_URL }
+        : {}),
+      ...(process.env.SPEG_VISION_MODEL
+        ? { SPEG_VISION_MODEL: process.env.SPEG_VISION_MODEL }
+        : {}),
+      ...(process.env.SPEG_VISION_API_TOKEN
+        ? { SPEG_VISION_API_TOKEN: process.env.SPEG_VISION_API_TOKEN }
+        : {}),
       ...(localDevelopmentAccountPassword
         ? { LOCAL_DEV_ACCOUNT_PASSWORD: localDevelopmentAccountPassword }
         : {}),

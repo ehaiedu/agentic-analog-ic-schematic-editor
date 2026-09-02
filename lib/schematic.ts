@@ -9,11 +9,37 @@
 export type DeviceKind =
   | "nmos4"
   | "pmos4"
+  | "diode"
+  | "npn3"
+  | "pnp3"
   | "resistor"
   | "capacitor"
   | "inductor"
   | "vsource"
   | "isource"
+  | "vcvs"
+  | "vccs"
+  | "switch4"
+  | "transmission_gate"
+  | "sampling_switch"
+  | "cdac_array"
+  | "sar_logic"
+  | "dynamic_comparator"
+  | "diff_pair"
+  | "current_mirror"
+  | "bias_current"
+  | "gain_stage"
+  | "latch"
+  | "opamp3"
+  | "subckt4"
+  | "subckt5"
+  | "subckt6"
+  | "subckt7"
+  | "subckt8"
+  | "subckt9"
+  | "subckt10"
+  | "subckt11"
+  | "subckt12"
   | "vdd"
   | "gnd"
   | "input"
@@ -47,7 +73,7 @@ export interface PinDefinition {
 export interface DeviceDefinition {
   kind: DeviceKind;
   label: string;
-  category: "mos" | "passive" | "source" | "port" | "utility";
+  category: "mos" | "diode" | "bipolar" | "passive" | "source" | "controlled" | "macro" | "port" | "utility";
   prefix: string;
   width: number;
   height: number;
@@ -92,7 +118,7 @@ export interface SchematicEdge {
   target: WireEndpoint;
   /** Persisted polyline corners. Every segment participates in connectivity extraction. */
   vertices?: Point[];
-  style?: "NORMAL" | "FLIGHT";
+  style?: "NORMAL" | "FLIGHT" | "REFERENCE";
   width?: number;
   creationOrder?: number;
 }
@@ -247,6 +273,55 @@ const DEFINITIONS: Record<DeviceKind, DeviceDefinition> = {
     netlistable: true,
     originPortId: "G",
   },
+  diode: {
+    kind: "diode",
+    label: "Diode",
+    category: "diode",
+    prefix: "D",
+    width: 90,
+    height: 50,
+    pins: [
+      { id: "P", label: "Anode", side: "left", required: true },
+      { id: "N", label: "Cathode", side: "right", required: true },
+    ],
+    defaults: { model: "diode", area: "1", M: "1" },
+    requiredProperties: ["model"],
+    netlistable: true,
+  },
+  npn3: {
+    kind: "npn3",
+    label: "NPN BJT",
+    category: "bipolar",
+    prefix: "Q",
+    width: 70,
+    height: 80,
+    pins: [
+      { id: "C", label: "Collector", side: "top", required: true },
+      { id: "B", label: "Base", side: "left", required: true },
+      { id: "E", label: "Emitter", side: "bottom", required: true },
+    ],
+    defaults: { model: "npn", area: "1", M: "1" },
+    requiredProperties: ["model"],
+    netlistable: true,
+    originPortId: "B",
+  },
+  pnp3: {
+    kind: "pnp3",
+    label: "PNP BJT",
+    category: "bipolar",
+    prefix: "Q",
+    width: 70,
+    height: 80,
+    pins: [
+      { id: "C", label: "Collector", side: "bottom", required: true },
+      { id: "B", label: "Base", side: "left", required: true },
+      { id: "E", label: "Emitter", side: "top", required: true },
+    ],
+    defaults: { model: "pnp", area: "1", M: "1" },
+    requiredProperties: ["model"],
+    netlistable: true,
+    originPortId: "B",
+  },
   resistor: {
     kind: "resistor",
     label: "Resistor",
@@ -320,6 +395,449 @@ const DEFINITIONS: Record<DeviceKind, DeviceDefinition> = {
     ],
     defaults: { dc: "10u", ac: "0" },
     requiredProperties: ["dc"],
+    netlistable: true,
+  },
+  vcvs: {
+    kind: "vcvs",
+    label: "VCVS",
+    category: "controlled",
+    prefix: "E",
+    width: 80,
+    height: 90,
+    pins: [
+      { id: "P", label: "Out+", side: "top", required: true },
+      { id: "N", label: "Out-", side: "bottom", required: true },
+      { id: "CP", label: "Ctrl+", side: "left", required: true },
+      { id: "CN", label: "Ctrl-", side: "right", required: true },
+    ],
+    defaults: { gain: "1" },
+    requiredProperties: ["gain"],
+    netlistable: true,
+  },
+  vccs: {
+    kind: "vccs",
+    label: "VCCS",
+    category: "controlled",
+    prefix: "G",
+    width: 80,
+    height: 90,
+    pins: [
+      { id: "P", label: "Out+", side: "top", required: true },
+      { id: "N", label: "Out-", side: "bottom", required: true },
+      { id: "CP", label: "Ctrl+", side: "left", required: true },
+      { id: "CN", label: "Ctrl-", side: "right", required: true },
+    ],
+    defaults: { gm: "1m" },
+    requiredProperties: ["gm"],
+    netlistable: true,
+  },
+  switch4: {
+    kind: "switch4",
+    label: "Voltage Switch",
+    category: "controlled",
+    prefix: "S",
+    width: 90,
+    height: 70,
+    pins: [
+      { id: "P", label: "Sw+", side: "left", required: true },
+      { id: "N", label: "Sw-", side: "right", required: true },
+      { id: "CP", label: "Ctrl+", side: "top", required: true },
+      { id: "CN", label: "Ctrl-", side: "bottom", required: true },
+    ],
+    defaults: { model: "sw", ron: "1", roff: "1G", vt: "0.5", vh: "0" },
+    requiredProperties: ["model"],
+    netlistable: true,
+  },
+  transmission_gate: {
+    kind: "transmission_gate",
+    label: "Transmission Gate",
+    category: "macro",
+    prefix: "X",
+    width: 110,
+    height: 70,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "right", required: true },
+      { id: "EN", label: "EN", side: "top", required: true },
+      { id: "ENB", label: "ENB", side: "bottom", required: true },
+    ],
+    defaults: { master: "transmission_gate" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  sampling_switch: {
+    kind: "sampling_switch",
+    label: "Sampling Switch",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 80,
+    pins: [
+      { id: "IN", label: "IN", side: "left", required: true },
+      { id: "OUT", label: "OUT", side: "right", required: true },
+      { id: "CLK", label: "CLK", side: "top", required: true },
+      { id: "CLKB", label: "CLKB", side: "bottom", required: true },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "sampling_switch" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  cdac_array: {
+    kind: "cdac_array",
+    label: "CDAC Array",
+    category: "macro",
+    prefix: "X",
+    width: 150,
+    height: 100,
+    pins: [
+      { id: "TOP", label: "TOP", side: "top", required: true },
+      { id: "BOT", label: "BOT", side: "bottom", required: true },
+      { id: "CTRL", label: "CTRL", side: "left", required: true },
+      { id: "VREFP", label: "VREFP", side: "right", required: true },
+      { id: "VREFN", label: "VREFN", side: "right", required: true },
+      { id: "VCM", label: "VCM", side: "right", required: false },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "cdac_array", bits: "10", unitCap: "1f" },
+    requiredProperties: ["master", "bits", "unitCap"],
+    netlistable: true,
+  },
+  sar_logic: {
+    kind: "sar_logic",
+    label: "SAR Logic",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 90,
+    pins: [
+      { id: "CLK", label: "CLK", side: "left", required: true },
+      { id: "CMP", label: "CMP", side: "left", required: true },
+      { id: "CTRL", label: "CTRL", side: "right", required: true },
+      { id: "DOUT", label: "DOUT", side: "right", required: true },
+      { id: "RST", label: "RST", side: "top", required: false },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "sar_logic", bits: "10" },
+    requiredProperties: ["master", "bits"],
+    netlistable: true,
+  },
+  dynamic_comparator: {
+    kind: "dynamic_comparator",
+    label: "Dynamic Comparator",
+    category: "macro",
+    prefix: "X",
+    width: 150,
+    height: 90,
+    pins: [
+      { id: "INP", label: "+", side: "left", required: true },
+      { id: "INN", label: "-", side: "left", required: true },
+      { id: "OUTP", label: "OUTP", side: "right", required: true },
+      { id: "OUTN", label: "OUTN", side: "right", required: true },
+      { id: "CLK", label: "CLK", side: "top", required: true },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "dynamic_comparator" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  diff_pair: {
+    kind: "diff_pair",
+    label: "Differential Pair",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 90,
+    pins: [
+      { id: "INP", label: "+", side: "left", required: true },
+      { id: "INN", label: "-", side: "left", required: true },
+      { id: "OUTP", label: "OUTP", side: "right", required: true },
+      { id: "OUTN", label: "OUTN", side: "right", required: true },
+      { id: "TAIL", label: "TAIL", side: "bottom", required: true },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+    ],
+    defaults: { master: "diff_pair" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  current_mirror: {
+    kind: "current_mirror",
+    label: "Current Mirror",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 80,
+    pins: [
+      { id: "IN", label: "IREF", side: "left", required: true },
+      { id: "OUT", label: "IOUT", side: "right", required: true },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "current_mirror", ratio: "1" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  bias_current: {
+    kind: "bias_current",
+    label: "Bias Current",
+    category: "macro",
+    prefix: "X",
+    width: 110,
+    height: 80,
+    pins: [
+      { id: "OUT", label: "IBIAS", side: "right", required: true },
+      { id: "EN", label: "EN", side: "left", required: false },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "bias_current", current: "10u" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  gain_stage: {
+    kind: "gain_stage",
+    label: "Gain Stage",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 90,
+    pins: [
+      { id: "INP", label: "+", side: "left", required: true },
+      { id: "INN", label: "-", side: "left", required: true },
+      { id: "OUT", label: "OUT", side: "right", required: true },
+      { id: "VDD", label: "VDD", side: "top", required: false },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "gain_stage" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  latch: {
+    kind: "latch",
+    label: "Regenerative Latch",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 90,
+    pins: [
+      { id: "INP", label: "INP", side: "left", required: true },
+      { id: "INN", label: "INN", side: "left", required: true },
+      { id: "OUTP", label: "OUTP", side: "right", required: true },
+      { id: "OUTN", label: "OUTN", side: "right", required: true },
+      { id: "CLK", label: "CLK", side: "top", required: true },
+      { id: "VSS", label: "VSS", side: "bottom", required: false },
+    ],
+    defaults: { master: "regenerative_latch" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  opamp3: {
+    kind: "opamp3",
+    label: "OpAmp",
+    category: "macro",
+    prefix: "X",
+    width: 100,
+    height: 90,
+    pins: [
+      { id: "INP", label: "+", side: "left", required: true },
+      { id: "INN", label: "-", side: "left", required: true },
+      { id: "OUT", label: "Out", side: "right", required: true },
+    ],
+    defaults: { master: "opamp_core" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt4: {
+    kind: "subckt4",
+    label: "Subckt 4-pin",
+    category: "macro",
+    prefix: "X",
+    width: 110,
+    height: 90,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "right", required: true },
+      { id: "D", label: "D", side: "right", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt5: {
+    kind: "subckt5",
+    label: "Subckt 5-pin",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 120,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "right", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt6: {
+    kind: "subckt6",
+    label: "Subckt 6-pin",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 100,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "right", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+      { id: "F", label: "F", side: "right", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt7: {
+    kind: "subckt7",
+    label: "Subckt 7-pin",
+    category: "macro",
+    prefix: "X",
+    width: 140,
+    height: 200,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "left", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+      { id: "F", label: "F", side: "right", required: true },
+      { id: "G", label: "G", side: "right", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt8: {
+    kind: "subckt8",
+    label: "Subckt 8-pin",
+    category: "macro",
+    prefix: "X",
+    width: 140,
+    height: 150,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "left", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+      { id: "F", label: "F", side: "right", required: true },
+      { id: "G", label: "G", side: "right", required: true },
+      { id: "H", label: "H", side: "right", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt9: {
+    kind: "subckt9",
+    label: "Subckt 9-pin",
+    category: "macro",
+    prefix: "X",
+    width: 120,
+    height: 120,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "right", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+      { id: "F", label: "F", side: "right", required: true },
+      { id: "G", label: "G", side: "top", required: true },
+      { id: "H", label: "H", side: "top", required: true },
+      { id: "I", label: "I", side: "top", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt10: {
+    kind: "subckt10",
+    label: "Subckt 10-pin",
+    category: "macro",
+    prefix: "X",
+    width: 150,
+    height: 150,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "left", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+      { id: "F", label: "F", side: "right", required: true },
+      { id: "G", label: "G", side: "right", required: true },
+      { id: "H", label: "H", side: "right", required: true },
+      { id: "I", label: "I", side: "top", required: true },
+      { id: "J", label: "J", side: "top", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt11: {
+    kind: "subckt11",
+    label: "Subckt 11-pin",
+    category: "macro",
+    prefix: "X",
+    width: 160,
+    height: 150,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "left", required: true },
+      { id: "E", label: "E", side: "right", required: true },
+      { id: "F", label: "F", side: "right", required: true },
+      { id: "G", label: "G", side: "right", required: true },
+      { id: "H", label: "H", side: "right", required: true },
+      { id: "I", label: "I", side: "top", required: true },
+      { id: "J", label: "J", side: "top", required: true },
+      { id: "K", label: "K", side: "top", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
+    netlistable: true,
+  },
+  subckt12: {
+    kind: "subckt12",
+    label: "Subckt 12-pin",
+    category: "macro",
+    prefix: "X",
+    width: 160,
+    height: 210,
+    pins: [
+      { id: "A", label: "A", side: "left", required: true },
+      { id: "B", label: "B", side: "left", required: true },
+      { id: "C", label: "C", side: "left", required: true },
+      { id: "D", label: "D", side: "left", required: true },
+      { id: "E", label: "E", side: "left", required: true },
+      { id: "F", label: "F", side: "left", required: true },
+      { id: "G", label: "G", side: "right", required: true },
+      { id: "H", label: "H", side: "right", required: true },
+      { id: "I", label: "I", side: "right", required: true },
+      { id: "J", label: "J", side: "right", required: true },
+      { id: "K", label: "K", side: "right", required: true },
+      { id: "L", label: "L", side: "right", required: true },
+    ],
+    defaults: { master: "subckt_cell" },
+    requiredProperties: ["master"],
     netlistable: true,
   },
   vdd: {
@@ -432,6 +950,15 @@ export function getPinPosition(pin: PinDefinition, node: SchematicNode): Point {
   if (node.kind === "junction") {
     x = node.width / 2;
     y = node.height / 2;
+  } else {
+    const definition = getDeviceDefinition(node.kind);
+    const sameSidePins = definition.pins.filter((candidate) => candidate.side === pin.side);
+    const sideIndex = sameSidePins.findIndex((candidate) => candidate.id === pin.id);
+    const fraction = sameSidePins.length > 1 && sideIndex >= 0
+      ? (sideIndex + 1) / (sameSidePins.length + 1)
+      : 0.5;
+    if (pin.side === "left" || pin.side === "right") y = node.height * fraction;
+    if (pin.side === "top" || pin.side === "bottom") x = node.width * fraction;
   }
   if (node.mirrored) x = node.width - x;
   return { x, y };
@@ -506,9 +1033,9 @@ export function orthogonalWireVertices(source: Point, target: Point): Point[] {
 }
 
 /**
- * Migrate older in-memory/imported drawings to the canonical symbol geometry.
- * Wires keep their electrical terminals, so changing a symbol box cannot
- * alter connectivity or the generated netlist.
+ * Snap electrical coordinates while preserving only approved import geometry.
+ * Ordinary documents still canonicalize to the library symbol size so legacy
+ * migrations and hand-edited drawings remain deterministic.
  */
 export function normalizeSchematicGeometry(document: SchematicDocument): SchematicDocument {
   return {
@@ -517,12 +1044,13 @@ export function normalizeSchematicGeometry(document: SchematicDocument): Schemat
     displayGrid: Math.max(1, Math.round(document.displayGrid)),
     nodes: document.nodes.map((node) => {
       const definition = getDeviceDefinition(node.kind);
+      const keepExplicitSize = node.properties.cadenceVisualScale === "mos_readable";
       return {
         ...node,
         x: snapToElectricalGrid(node.x),
         y: snapToElectricalGrid(node.y),
-        width: definition.width,
-        height: definition.height,
+        width: keepExplicitSize ? node.width : definition.width,
+        height: keepExplicitSize ? node.height : definition.height,
       };
     }),
     edges: document.edges.map((edge) => ({
@@ -629,7 +1157,7 @@ export function createDeviceNode(
 }
 
 export function createEmptyDocument(
-  project = "agentic-analog-ic-schematic-editor",
+  project = "analog-studio",
   cell = "untitled",
 ): SchematicDocument {
   return {
@@ -811,7 +1339,7 @@ export function createDemoDocument(): SchematicDocument {
   ];
 
   return {
-    ...createEmptyDocument("agentic-analog-ic-schematic-editor", "cmos_inverter"),
+    ...createEmptyDocument("demo1_260711", "cmos_inverter"),
     nodes,
     edges,
   };

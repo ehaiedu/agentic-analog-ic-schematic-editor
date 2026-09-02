@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { compileNetlist } from "../lib/netlist";
+import { buildAnnotatedNetlistPreview, highlightNetlistLine } from "../lib/netlistPreview";
 import {
   canvasPositionToDocumentOrigin,
   createDemoDocument,
@@ -19,9 +20,10 @@ import {
   type Rotation,
   updateNodeProperties,
 } from "../lib/schematic";
+import { rootCellKey, withHierarchyCellView } from "../lib/hierarchy";
 import { createX6NodeMetadata } from "../components/x6Symbols";
 
-const expectedSpectre = `// agentic-analog-ic-schematic-editor / cmos_inverter
+const expectedSpectre = `// demo1_260711 / cmos_inverter
 simulator lang=spectre
 global 0 VDD
 subckt cmos_inverter VIN VOUT
@@ -30,7 +32,7 @@ subckt cmos_inverter VIN VOUT
 ends cmos_inverter
 `;
 
-const expectedSpice = `* agentic-analog-ic-schematic-editor / cmos_inverter
+const expectedSpice = `* demo1_260711 / cmos_inverter
 .global VDD
 .subckt cmos_inverter VIN VOUT
 M1 VOUT VIN 0 0 nmos W=10u L=180n M=1 NF=1
@@ -53,6 +55,153 @@ test("demo inverter compiles to deterministic SPICE", () => {
 
   assert.equal(result.text, expectedSpice);
   assert.deepEqual(result.issues, []);
+});
+
+test("demo inverter exports formal EDA exchange targets", () => {
+  const document = createDemoDocument();
+  const cdl = compileNetlist(document, "cdl");
+  const empyrean = compileNetlist(document, "empyrean_cdl");
+  const oaExchange = JSON.parse(compileNetlist(document, "oa_exchange").text) as {
+    format: string;
+    policy: { openAccessBinaryGenerated: boolean; backendJobRequired: boolean };
+    cellview: { cell: string; view: string };
+    instances: Array<{ name: string; kind: string; terminals: Array<{ pin: string; net: string }> }>;
+  };
+  const skill = compileNetlist(document, "cadence_skill");
+
+  assert.match(cdl.text, /^\* demo1_260711 \/ cmos_inverter/m);
+  assert.match(cdl.text, /^\.SUBCKT cmos_inverter VIN VOUT/m);
+  assert.match(cdl.text, /^M1 VOUT VIN 0 0 nmos W=10u L=180n M=1 NF=1/m);
+  assert.match(empyrean.text, /Empyrean-compatible CDL exchange/);
+  assert.equal(oaExchange.format, "analog-studio-oa-exchange");
+  assert.equal(oaExchange.policy.openAccessBinaryGenerated, false);
+  assert.equal(oaExchange.policy.backendJobRequired, true);
+  assert.equal(oaExchange.cellview.cell, "cmos_inverter");
+  assert.equal(oaExchange.cellview.view, "schematic");
+  assert.deepEqual(
+    oaExchange.instances.find((instance) => instance.name === "M1")?.terminals.map((terminal) => `${terminal.pin}:${terminal.net}`),
+    ["D:VOUT", "G:VIN", "S:0", "B:0"],
+  );
+  assert.match(skill.text, /analogStudioImport_cmos_inverter/);
+  assert.match(skill.text, /schCreateInst/);
+  assert.match(skill.text, /analog_studio_oa_exchange/);
+});
+
+test("port symbols show the editable net name without generated IO prefixes", () => {
+  const seed = createDeviceNode("input", 0, 0);
+  const metadata = createX6NodeMetadata({
+    ...seed,
+    instanceName: "INPUT_VINP",
+    properties: { ...seed.properties, netName: "VINP" },
+  });
+
+  assert.equal(metadata.attrs?.instanceLabel?.text, "VINP");
+});
+
+test("net labels render as Cadence-style colored text rather than tag boxes", () => {
+  const seed = createDeviceNode("netlabel", 0, 0);
+  const metadata = createX6NodeMetadata({
+    ...seed,
+    instanceName: "VINP",
+    properties: {
+      ...seed.properties,
+      netName: "VINP",
+      textAlignment: "start",
+      objectType: "net-label",
+      displayHidden: "false",
+    },
+  });
+
+  assert.equal(metadata.attrs?.labelLead?.d, "");
+  assert.equal(metadata.attrs?.body?.stroke, "transparent");
+  assert.equal(metadata.attrs?.instanceLabel?.fill, "var(--schematic-net-label, #ff5f69)");
+  const portGroups = (metadata.ports as { groups?: Record<string, { attrs?: { portBody?: { fill?: string } } }> }).groups;
+  assert.equal(portGroups?.pin?.attrs?.portBody?.fill, "transparent");
+});
+
+test("annotated code preview describes editable child cellviews in source comments", () => {
+  const nmos = createDeviceNode("nmos4", 260, 120);
+  const vinp = createDeviceNode("input", 60, 120, [nmos]);
+  const vout = createDeviceNode("output", 420, 120, [nmos, vinp]);
+  const child = {
+    ...createEmptyDocument("ota_project", "ota_5t_mos_core"),
+    nodes: [
+      { ...vinp, instanceName: "VINP", properties: { ...vinp.properties, netName: "VINP" } },
+      { ...vout, instanceName: "VOUT", properties: { ...vout.properties, netName: "VOUT" } },
+      nmos,
+    ],
+    properties: { topology: "five_transistor_ota", generatedBy: "cadence_schematic_convertor" },
+  };
+  const childKey = rootCellKey(child);
+  const instanceSeed = createDeviceNode("subckt6", 160, 160);
+  const top = withHierarchyCellView({
+    ...createEmptyDocument("ota_project", "ota_5t_baseline_testbench"),
+    nodes: [{
+      ...instanceSeed,
+      instanceName: "XOTA0",
+      properties: {
+        ...instanceSeed.properties,
+        master: child.cell,
+        hierarchyChildKey: childKey,
+        hierarchyCell: child.cell,
+        hierarchyEditable: "true",
+        portOrder: "VINP,VOUT",
+      },
+    }],
+  }, child, false);
+
+  const preview = buildAnnotatedNetlistPreview(top, top, "spectre", compileNetlist(top, "spectre").text);
+
+  assert.match(preview, /^\/\/ Analog Studio annotated code preview/m);
+  assert.match(preview, /^\/\/ Subcircuits:/m);
+  assert.match(preview, /^\/\/   XOTA0 -> ota_5t_mos_core \(editable MOS-level; ports VINP,VOUT\)/m);
+  assert.match(preview, /^\/\/     ota_5t_mos_core: 1 MOS, 0 passive, 0 macro, ports VINP,VOUT; topology=five_transistor_ota; generatedBy=cadence_schematic_convertor/m);
+  assert.match(preview, /simulator lang=spectre/);
+});
+
+test("netlist code highlighter separates comments, devices, parameters, and numbers", () => {
+  assert.deepEqual(
+    highlightNetlistLine("// Subcircuits:", "spectre").filter((token) => token.kind),
+    [{ text: "// Subcircuits:", kind: "comment" }],
+  );
+
+  const kinds = highlightNetlistLine("  M1 (VOUT VIN 0 0) nmos w=10u l=180n", "spectre")
+    .filter((token) => token.kind)
+    .map((token) => token.kind);
+
+  assert.ok(kinds.includes("instance"));
+  assert.ok(kinds.includes("parameter"));
+  assert.ok(kinds.includes("number"));
+  assert.ok(kinds.includes("punctuation"));
+});
+
+test("legacy Cadence macro source previews omit internal bookkeeping fields", () => {
+  const source = createDeviceNode("subckt4", 100, 100);
+  const document = {
+    ...createEmptyDocument("cadence_preview", "comparator"),
+    nodes: [{
+      ...source,
+      instanceName: "I_tail",
+      properties: {
+        ...source.properties,
+        cadenceCell: "comparator",
+        cadenceMasterCell: "isource",
+        cadenceMasterLib: "analogLib",
+        cadenceMasterView: "symbol",
+        cadenceRole: "tail_source",
+        cadenceSourceKind: "primitive",
+        dc: "20u",
+        master: "isource",
+        port_A: "PLUS",
+        port_B: "MINUS",
+        portOrder: "PLUS,MINUS",
+      },
+    }],
+  };
+  const compiled = compileNetlist(document, "spectre");
+
+  assert.match(compiled.text, /^  I_tail \(NC NC\) isource dc=20u$/m);
+  assert.doesNotMatch(compiled.text, /cadenceCell|cadenceMaster|port_A|portOrder/);
 });
 
 test("terminal-to-point stub reports one dangling warning and counts its source pin", () => {
@@ -305,11 +454,37 @@ test("uniformly translating symbols and wire geometry preserves electrical outpu
 const deviceKinds: DeviceKind[] = [
   "nmos4",
   "pmos4",
+  "diode",
+  "npn3",
+  "pnp3",
   "resistor",
   "capacitor",
   "inductor",
   "vsource",
   "isource",
+  "vcvs",
+  "vccs",
+  "switch4",
+  "transmission_gate",
+  "sampling_switch",
+  "cdac_array",
+  "sar_logic",
+  "dynamic_comparator",
+  "diff_pair",
+  "current_mirror",
+  "bias_current",
+  "gain_stage",
+  "latch",
+  "opamp3",
+  "subckt4",
+  "subckt5",
+  "subckt6",
+  "subckt7",
+  "subckt8",
+  "subckt9",
+  "subckt10",
+  "subckt11",
+  "subckt12",
   "vdd",
   "gnd",
   "input",
@@ -430,7 +605,7 @@ test("demo input branch terminates on the vertical gate segment", () => {
   assert.ok(260 <= Math.max(gatePoints[0]!.y, gatePoints[1]!.y));
 });
 
-test("MOS annotations use a fixed Cadence-style stack on the right", () => {
+test("MOS annotations use a compact Cadence-style identity and model stack", () => {
   const pmos = createDemoDocument().nodes.find((node) => node.kind === "pmos4");
   assert.ok(pmos);
   const pinPositions = Object.fromEntries(
@@ -446,7 +621,7 @@ test("MOS annotations use a fixed Cadence-style stack on the right", () => {
   const attrs = metadata.attrs as Record<string, Record<string, unknown>>;
 
   assert.equal(attrs.labelGroup.transform, "rotate(-90 25 35)");
-  assert.equal(attrs.instanceLabel.x, 64);
+  assert.equal(attrs.instanceLabel.x, 2);
   assert.equal(attrs.instanceLabel.refX, 0);
   assert.equal(attrs.instanceLabel.refY, 0);
   assert.deepEqual(
@@ -458,7 +633,7 @@ test("MOS annotations use a fixed Cadence-style stack on the right", () => {
       attrs.mosFingerLabel.text,
       attrs.mosMultiplierLabel.text,
     ],
-    ["M2", '"pmos"', "w:20u", "l:180n", "fingers:1", "m:1"],
+    ["M2", '"pmos"', "W/L 20u/180n", "", "", ""],
   );
   assert.deepEqual(
     [
@@ -469,7 +644,7 @@ test("MOS annotations use a fixed Cadence-style stack on the right", () => {
       attrs.mosFingerLabel.y,
       attrs.mosMultiplierLabel.y,
     ],
-    [10, 21, 32, 43, 54, 65],
+    [11, 27, 40, 53, 66, 79],
   );
 });
 
@@ -496,7 +671,7 @@ test("Cadence-style terminals distinguish square pins from round junctions", () 
       height: nmosPorts.groups.pin.attrs.portBody.height,
       fill: nmosPorts.groups.pin.attrs.portBody.fill,
     },
-    { x: -3, y: -3, width: 6, height: 6, fill: "#d13438" },
+    { x: -2.5, y: -2.5, width: 5, height: 5, fill: "var(--schematic-terminal-fill, #ff5f69)" },
   );
   assert.deepEqual(junctionPorts.groups.pin.markup[0], {
     tagName: "circle",
@@ -510,8 +685,26 @@ test("Cadence-style terminals distinguish square pins from round junctions", () 
       fill: junctionAttrs.junction.fill,
       stroke: junctionAttrs.junction.stroke,
     },
-    { r: 3.5, fill: "#2b579a", stroke: "none" },
+    { r: 3, fill: "var(--schematic-junction-fill, #61c5ff)", stroke: "none" },
   );
+});
+
+test("SAR hierarchy macros render analog-specific Virtuoso-style symbol glyphs", () => {
+  const cases: Array<[DeviceKind, string, string]> = [
+    ["sampling_switch", "macroSwitchBlade", "S/H"],
+    ["cdac_array", "cdacCap1Top", "CDAC"],
+    ["dynamic_comparator", "macroComparatorCore", "COMP"],
+    ["sar_logic", "macroLogicCore", "SAR"],
+  ];
+
+  for (const [kind, expectedSelector, title] of cases) {
+    const metadata = createX6NodeMetadata(createDeviceNode(kind, 100, 100));
+    const attrs = metadata.attrs as Record<string, Record<string, unknown>>;
+
+    assert.match(JSON.stringify(metadata.markup), new RegExp(expectedSelector));
+    assert.equal(attrs.macroTitle.text, title);
+    assert.equal(attrs.macroBody.rx, 1);
+  }
 });
 
 test("MOS paths and arrow stay bound to the semantic Source terminal", () => {
@@ -520,12 +713,12 @@ test("MOS paths and arrow stay bound to the semantic Source terminal", () => {
   const nmosAttrs = createX6NodeMetadata(nmos).attrs as Record<string, Record<string, unknown>>;
   const pmosAttrs = createX6NodeMetadata(pmos).attrs as Record<string, Record<string, unknown>>;
 
-  assert.equal(nmosAttrs.mosSource.d, "M 30 50 L 40 50 L 40 70");
-  assert.equal(nmosAttrs.mosDrain.d, "M 30 20 L 40 20 L 40 0");
-  assert.equal(nmosAttrs.mosArrow.d, "M 32 46 L 39 50 L 32 54");
-  assert.equal(pmosAttrs.mosSource.d, "M 30 20 L 40 20 L 40 0");
-  assert.equal(pmosAttrs.mosDrain.d, "M 30 50 L 40 50 L 40 70");
-  assert.equal(pmosAttrs.mosArrow.d, "M 38 16 L 31 20 L 38 24");
+  assert.equal(nmosAttrs.mosSource.d, "M 28 56 L 40 56 L 40 70");
+  assert.equal(nmosAttrs.mosDrain.d, "M 28 14 L 40 14 L 40 0");
+  assert.equal(nmosAttrs.mosArrow.d, "M 30 52 L 39 56 L 30 60");
+  assert.equal(pmosAttrs.mosSource.d, "M 28 14 L 40 14 L 40 0");
+  assert.equal(pmosAttrs.mosDrain.d, "M 28 56 L 40 56 L 40 70");
+  assert.equal(pmosAttrs.mosArrow.d, "M 38 10 L 29 14 L 38 18");
 
   for (const rotation of [0, 90, 180, 270] as const) {
     for (const mirrored of [false, true]) {
