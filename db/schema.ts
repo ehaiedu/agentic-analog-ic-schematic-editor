@@ -45,3 +45,61 @@ export const projectRecovery = sqliteTable("project_recovery", {
 }, (table) => [
   index("project_recovery_owner_idx").on(table.ownerId),
 ]);
+
+export const agentConversations = sqliteTable("agent_conversations", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  activeFamily: text("active_family").notNull().default(""),
+  modelRoute: text("model_route").notNull().default("auto"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("agent_conversations_project_updated_idx").on(table.projectId, table.updatedAt),
+  index("agent_conversations_owner_idx").on(table.ownerId),
+]);
+
+export const agentMessages = sqliteTable("agent_messages", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id").notNull().references(() => agentConversations.id, { onDelete: "cascade" }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sequence: integer("sequence").notNull(),
+  role: text("role").notNull(),
+  kind: text("kind").notNull().default(""),
+  status: text("status").notNull().default("info"),
+  title: text("title").notNull().default(""),
+  text: text("text").notNull().default(""),
+  code: text("code").notNull().default(""),
+  metricsJson: text("metrics_json").notNull().default("{}"),
+  evidenceLevel: text("evidence_level").notNull().default(""),
+  modelId: text("model_id").notNull().default(""),
+  createdAt: integer("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("agent_messages_conversation_sequence_unique").on(table.conversationId, table.sequence),
+  index("agent_messages_project_idx").on(table.projectId),
+  index("agent_messages_owner_idx").on(table.ownerId),
+]);
+
+export const agentAttachments = sqliteTable("agent_attachments", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id").notNull().references(() => agentConversations.id, { onDelete: "cascade" }),
+  messageId: text("message_id").references(() => agentMessages.id, { onDelete: "set null" }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  direction: text("direction").notNull(),
+  objectKey: text("object_key").notNull(),
+  fileName: text("file_name").notNull(),
+  mediaType: text("media_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  width: integer("width").notNull().default(0),
+  height: integer("height").notNull().default(0),
+  sha256: text("sha256").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (table) => [
+  index("agent_attachments_conversation_idx").on(table.conversationId),
+  index("agent_attachments_message_idx").on(table.messageId),
+  index("agent_attachments_project_idx").on(table.projectId),
+  uniqueIndex("agent_attachments_object_key_unique").on(table.objectKey),
+]);

@@ -2,9 +2,11 @@ import {
   getDeviceDefinition,
   getPinWorldPosition,
   isEdgeTerminal,
+  type EdgeTerminal,
   type MarkerSeverity,
   type Point,
   type SchematicDocument,
+  type SchematicEdge,
   type SchematicNode,
 } from "./schematic";
 import {
@@ -99,6 +101,14 @@ interface NameCandidate {
 
 const terminalKey = (nodeId: string, portId: string) => `T:${nodeId}\u0000${portId}`;
 const wireKey = (wireId: string) => `W:${wireId}`;
+const wireEndpointKey = (wireId: string, point: Point) => `${wireId}\u0000${pointKey(point)}`;
+
+interface DeclaredTerminalNet {
+  nodeId: string;
+  portId: string;
+  net: string;
+  sourceId: string;
+}
 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, "en", { numeric: true, sensitivity: "base" });
@@ -134,6 +144,59 @@ function namedNode(node: SchematicNode): NameCandidate | null {
 
 function nameKey(value: string): string {
   return VSE_CORE_PROFILE.naming.netNameCaseSensitive ? value : value.toLocaleLowerCase("en");
+}
+
+function referenceStubTerminal(edge: SchematicEdge): EdgeTerminal | null {
+  const sourceTerminal = isEdgeTerminal(edge.source) ? edge.source : null;
+  const targetTerminal = isEdgeTerminal(edge.target) ? edge.target : null;
+  if (sourceTerminal && !targetTerminal) return sourceTerminal;
+  if (targetTerminal && !sourceTerminal) return targetTerminal;
+  return null;
+}
+
+function declaredTerminalNets(document: SchematicDocument): DeclaredTerminalNet[] {
+  const entries: DeclaredTerminalNet[] = [];
+  const seen = new Set<string>();
+  const add = (entry: DeclaredTerminalNet) => {
+    const net = entry.net.trim();
+    if (!net) return;
+    const key = `${entry.nodeId}\u0000${entry.portId}\u0000${nameKey(net)}\u0000${entry.sourceId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ ...entry, net });
+  };
+
+  for (const edge of document.edges) {
+    if (edge.style !== "REFERENCE") continue;
+    const terminal = referenceStubTerminal(edge);
+    if (!terminal) continue;
+    for (const label of document.netLabels.filter((candidate) => candidate.wireId === edge.id)) {
+      add({
+        nodeId: terminal.nodeId,
+        portId: terminal.portId,
+        net: label.text,
+        sourceId: label.id,
+      });
+    }
+  }
+
+  const extension = document.extensions?.cadenceTerminalNets;
+  if (extension && typeof extension === "object" && !Array.isArray(extension)) {
+    const rawEntries = (extension as { entries?: unknown }).entries;
+    if (Array.isArray(rawEntries)) {
+      for (const raw of rawEntries) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+        const record = raw as Record<string, unknown>;
+        const nodeId = typeof record.nodeId === "string" ? record.nodeId : "";
+        const portId = typeof record.portId === "string" ? record.portId : "";
+        const net = typeof record.net === "string" ? record.net : "";
+        if (!nodeId || !portId || !net.trim()) continue;
+        add({ nodeId, portId, net, sourceId: typeof record.sourceId === "string" ? record.sourceId : "cadenceTerminalNets" });
+      }
+    }
+  }
+
+  return entries;
 }
 
 function componentSignature(
@@ -184,13 +247,14 @@ function wiresConnect(
 }
 
 function endpointIsConnected(
-  document: SchematicDocument,
   wireId: string,
   point: Point,
   segmentsByWire: ReadonlyMap<string, WireSegment[]>,
   terminalPositions: ReadonlyMap<string, Point>,
   explicitJunctionKeys: ReadonlySet<string>,
+  labeledEndpointKeys: ReadonlySet<string>,
 ): boolean {
+  if (labeledEndpointKeys.has(wireEndpointKey(wireId, point))) return true;
   if ([...terminalPositions.values()].some((candidate) => samePoint(candidate, point))) return true;
   if (explicitJunctionKeys.has(pointKey(point))) return true;
   for (const [otherId, segments] of segmentsByWire) {
@@ -203,10 +267,12 @@ function endpointIsConnected(
 export function extractConnectivity(document: SchematicDocument): ConnectivityResult {
   const unionFind = new UnionFind();
   const issues: ConnectivityIssue[] = [];
+  const electricalEdges = document.edges.filter((wire) => wire.style !== "FLIGHT" && wire.style !== "REFERENCE");
   const nodeById = new Map(document.nodes.map((node) => [node.id, node]));
   const terminalPositions = new Map<string, Point>();
   const terminalRefs = new Map<string, TerminalRef>();
   const terminalConnectionCount = new Map<string, number>();
+  const declaredNamesByTerminal = new Map<string, string[]>();
 
   for (const node of [...document.nodes].sort((a, b) => compareText(a.id, b.id))) {
     for (const pin of getDeviceDefinition(node.kind).pins) {
@@ -219,8 +285,31 @@ export function extractConnectivity(document: SchematicDocument): ConnectivityRe
     }
   }
 
+  for (const entry of declaredTerminalNets(document)) {
+    const terminal = terminalKey(entry.nodeId, entry.portId);
+    if (!terminalRefs.has(terminal)) {
+      issues.push({
+        severity: "error",
+        code: "CORRUPTED_OBJECT_REFERENCE",
+        message: `Declared net “${entry.net}” 引用了不存在的端口 ${entry.nodeId}.${entry.portId}。`,
+        objectRefs: [entry.sourceId, entry.nodeId],
+        nodeId: entry.nodeId,
+        portId: entry.portId,
+      });
+      continue;
+    }
+    const names = declaredNamesByTerminal.get(terminal) ?? [];
+    if (!names.some((candidate) => nameKey(candidate) === nameKey(entry.net))) {
+      names.push(entry.net);
+      declaredNamesByTerminal.set(terminal, names);
+    }
+    unionFind.add(`N:${nameKey(entry.net)}`);
+    unionFind.union(`N:${nameKey(entry.net)}`, terminal);
+    terminalConnectionCount.set(terminal, (terminalConnectionCount.get(terminal) ?? 0) + 1);
+  }
+
   const segmentsByWire = new Map<string, WireSegment[]>();
-  for (const wire of [...document.edges].sort((a, b) => compareText(a.id, b.id))) {
+  for (const wire of [...electricalEdges].sort((a, b) => compareText(a.id, b.id))) {
     const key = wireKey(wire.id);
     unionFind.add(key);
     const points = wirePathPoints(document, wire);
@@ -284,6 +373,15 @@ export function extractConnectivity(document: SchematicDocument): ConnectivityRe
   }
 
   const explicitJunctionKeys = new Set(document.explicitJunctions.map((junction) => pointKey(junction.point)));
+  const labeledEndpointKeys = new Set<string>();
+  for (const label of document.netLabels) {
+    if (!segmentsByWire.has(label.wireId)) continue;
+    for (const endpoint of wireEndpoints(document, label.wireId)) {
+      if (pointKey(endpoint) === pointKey(label.anchorPoint)) {
+        labeledEndpointKeys.add(wireEndpointKey(label.wireId, endpoint));
+      }
+    }
+  }
   const wireIds = [...segmentsByWire.keys()].sort(compareText);
   for (let firstIndex = 0; firstIndex < wireIds.length; firstIndex += 1) {
     for (let secondIndex = firstIndex + 1; secondIndex < wireIds.length; secondIndex += 1) {
@@ -312,17 +410,17 @@ export function extractConnectivity(document: SchematicDocument): ConnectivityRe
     }
   }
 
-  for (const wire of document.edges) {
+  for (const wire of electricalEdges) {
     const points = wirePathPoints(document, wire);
     if (points.length < 2) continue;
     const endpoints = [points[0], points[points.length - 1]];
     const dangling = endpoints.filter((point) => !endpointIsConnected(
-      document,
       wire.id,
       point,
       segmentsByWire,
       terminalPositions,
       explicitJunctionKeys,
+      labeledEndpointKeys,
     ));
     if (dangling.length) {
       issues.push({
@@ -375,6 +473,13 @@ export function extractConnectivity(document: SchematicDocument): ConnectivityRe
       const node = nodeById.get(terminal.nodeId);
       const candidate = node && namedNode(node);
       if (candidate) candidates.push(candidate);
+      for (const declaredName of declaredNamesByTerminal.get(terminalKey(terminal.nodeId, terminal.portId)) ?? []) {
+        candidates.push({
+          value: declaredName,
+          priority: 0,
+          sourceId: `${terminal.nodeId}:${terminal.portId}`,
+        });
+      }
     }
     candidates.sort((left, right) => left.priority - right.priority
       || compareText(left.value, right.value)
@@ -383,7 +488,7 @@ export function extractConnectivity(document: SchematicDocument): ConnectivityRe
     const signature = componentSignature(wires, terminals);
     const topologyKeys = new Set<string>();
     for (const wireId of wires) {
-      const wire = document.edges.find((candidate) => candidate.id === wireId);
+      const wire = electricalEdges.find((candidate) => candidate.id === wireId);
       if (!wire) continue;
       wirePathPoints(document, wire).forEach((point) => topologyKeys.add(pointKey(point)));
     }

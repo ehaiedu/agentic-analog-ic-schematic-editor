@@ -140,7 +140,6 @@ function fromIssue(issue: ERCIssue | ConnectivityIssue): RawIssue {
     point: "point" in issue ? issue.point : undefined,
   };
 }
-
 function overlapArea(
   first: { x: number; y: number; width: number; height: number },
   second: { x: number; y: number; width: number; height: number },

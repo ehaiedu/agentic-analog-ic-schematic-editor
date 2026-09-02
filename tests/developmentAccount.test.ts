@@ -17,7 +17,7 @@ test("loopback detection excludes LAN addresses and lookalike hosts", () => {
   for (const hostname of ["localhost", "LOCALHOST", "127.0.0.1", "::1", "[::1]"]) {
     assert.equal(isLoopbackHostname(hostname), true, hostname);
   }
-  for (const hostname of ["192.0.2.112", "0.0.0.0", "localhost.example.com", "127.0.0.2"]) {
+  for (const hostname of ["192.168.8.112", "0.0.0.0", "localhost.example.com", "127.0.0.2"]) {
     assert.equal(isLoopbackHostname(hostname), false, hostname);
   }
 });

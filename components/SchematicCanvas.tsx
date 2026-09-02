@@ -19,6 +19,7 @@ import {
   useImperativeHandle,
   useRef,
   type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
   canvasPositionToDocumentOrigin,
@@ -39,9 +40,14 @@ import {
   type Point,
   type SchematicDocument,
   type SchematicEdge,
+  type SchematicNote,
   type SchematicNode,
   type WireEndpoint,
 } from "../lib/schematic";
+import {
+  placeHierarchicalTemplateInstance,
+  type SubcircuitTemplateKind,
+} from "../lib/hierarchy";
 import { createX6NodeMetadata, getNodeVisualAttrs } from "./x6Symbols";
 import {
   closestPointOnOrthogonalSegment,
@@ -52,11 +58,23 @@ import {
 } from "../lib/schematicGeometry";
 import type { WireDrawMode } from "../lib/compatibilityProfile";
 import { extractConnectivity } from "../lib/connectivity";
+import {
+  CANVAS_MAX_SCALE,
+  CANVAS_MIN_SCALE,
+  CANVAS_ZOOM_FACTOR,
+  clampCanvasScale,
+  nextCanvasZoomScale,
+  normalizeCanvasRotation,
+} from "../lib/canvasViewport";
 
 export interface SchematicCanvasHandle {
   addDevice: (kind: DeviceKind, position?: { x: number; y: number }) => void;
   addDeviceAtClient: (kind: DeviceKind, clientX: number, clientY: number) => void;
+  addSubcircuitTemplate: (kind: SubcircuitTemplateKind, position?: { x: number; y: number }) => void;
+  addSubcircuitTemplateAtClient: (kind: SubcircuitTemplateKind, clientX: number, clientY: number) => void;
   rotateSelected: () => void;
+  rotateView: () => void;
+  resetViewRotation: () => void;
   mirrorSelected: () => void;
   deleteSelected: () => void;
   copySelected: () => void;
@@ -64,7 +82,9 @@ export interface SchematicCanvasHandle {
   redo: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  zoomTo: (scale: number) => void;
   fit: () => void;
+  centerSelection: () => void;
   setGridMode: (mode: GridMode) => void;
   clear: () => void;
   loadDocument: (document: SchematicDocument) => void;
@@ -93,6 +113,7 @@ export interface CanvasViewport {
   originX: number;
   originY: number;
   scale: number;
+  rotation: number;
   width: number;
   height: number;
 }
@@ -136,12 +157,19 @@ interface SnapCandidate {
 let analogWireRegistered = false;
 let analogGridRegistered = false;
 
+const VIRTUOSO_LIGHT_WIRE = "#61c5ff";
+const VIRTUOSO_LIGHT_DEVICE = "#f0cf62";
+const VIRTUOSO_LIGHT_TERMINAL = "#ff5f69";
+const VIRTUOSO_DARK_CANVAS = "#ffffff";
+const VIRTUOSO_DARK_GRID = "#cfd7df";
+
 const VISUAL_GRID_FACTOR = VISUAL_GRID_SIZE / ELECTRICAL_GRID_SIZE;
 const WIRE_ROUTER_ARGS = {
   padding: 10,
   step: ELECTRICAL_GRID_SIZE,
   snapToGrid: false,
 };
+const PORT_DUPLICATE_LABEL_DISTANCE_SQ = 95 * 95;
 
 const SELECTABLE_WIRE_ATTRS = {
   wrap: {
@@ -155,8 +183,8 @@ function registerGridShapes() {
   Graph.registerGrid(
     "analog-major-dot",
     {
-      color: "#a8adb3",
-      thickness: 1.55,
+      color: VIRTUOSO_DARK_GRID,
+      thickness: 1,
       markup: "rect",
       update(elem, options) {
         options.width *= VISUAL_GRID_FACTOR;
@@ -176,7 +204,7 @@ function registerGridShapes() {
   Graph.registerGrid(
     "analog-major-mesh",
     {
-      color: "#d7d7d7",
+      color: "#222a31",
       thickness: 1,
       markup: "path",
       update(elem, options) {
@@ -247,16 +275,16 @@ function registerWireShape() {
           vectorEffect: "non-scaling-stroke",
         },
         selectionHalo: {
-          stroke: "#5b9bd5",
-          strokeWidth: 4.5,
+          stroke: "#ffd43b",
+          strokeWidth: 3,
           strokeDasharray: "5 3",
           strokeLinecap: "butt",
           opacity: 0,
           vectorEffect: "non-scaling-stroke",
         },
         line: {
-          stroke: "#484644",
-          strokeWidth: 1.45,
+          stroke: VIRTUOSO_LIGHT_WIRE,
+          strokeWidth: 1.15,
           sourceMarker: null,
           targetMarker: null,
           strokeLinecap: "square",
@@ -280,6 +308,28 @@ function terminalCellId(cell: unknown): string | null {
 function normalizeRotation(angle: number): Rotation {
   const normalized = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
   return normalized as Rotation;
+}
+
+function graphViewportRotation(graph: Graph): number {
+  const rotation = graph.rotate();
+  const angle = typeof rotation === "number"
+    ? rotation
+    : Number((rotation as { angle?: unknown }).angle ?? 0);
+  return normalizeCanvasRotation(angle);
+}
+
+function graphViewportScale(graph: Graph): number {
+  const zoom = graph.zoom();
+  if (typeof zoom === "number" && Number.isFinite(zoom) && zoom > 0) return clampCanvasScale(zoom);
+  const scale = graph.scale();
+  return clampCanvasScale(scale.sx);
+}
+
+function graphContainerCenter(container: HTMLDivElement): Point {
+  return {
+    x: Math.max(1, container.clientWidth) / 2,
+    y: Math.max(1, container.clientHeight) / 2,
+  };
 }
 
 function nodeSnapshot(node: Node): SchematicNode {
@@ -313,7 +363,23 @@ function junctionCanvasNode(junction: ExplicitJunction): SchematicNode {
   };
 }
 
-function netLabelCanvasNode(label: NetLabel): SchematicNode {
+function isPortLikeKind(kind: DeviceKind): boolean {
+  return kind === "input" || kind === "output" || kind === "bidir" || kind === "vdd" || kind === "gnd";
+}
+
+function shouldHideDuplicatePortLabel(label: NetLabel, document: SchematicDocument): boolean {
+  const normalizedLabel = label.text.trim().toUpperCase();
+  if (!normalizedLabel) return false;
+  return document.nodes.some((node) => {
+    if (!isPortLikeKind(node.kind)) return false;
+    const netName = (node.properties.netName || node.instanceName).trim().toUpperCase();
+    if (netName !== normalizedLabel) return false;
+    const pin = getPinWorldPosition(node, "P");
+    return Boolean(pin && squaredDistance(pin, label.anchorPoint) <= PORT_DUPLICATE_LABEL_DISTANCE_SQ);
+  });
+}
+
+function netLabelCanvasNode(label: NetLabel, hidden = false): SchematicNode {
   return {
     ...createDeviceNode("netlabel", label.anchorPoint.x, label.anchorPoint.y - 15),
     id: label.id,
@@ -325,7 +391,47 @@ function netLabelCanvasNode(label: NetLabel): SchematicNode {
       segmentIndex: String(label.segmentIndex),
       textAlignment: label.textAlignment,
       objectType: "net-label",
+      displayHidden: hidden ? "true" : "false",
     },
+  };
+}
+
+function noteCanvasNode(note: SchematicNote) {
+  const lines = note.text.length > 78
+    ? note.text.replace(/(.{1,78})(\s+|$)/g, "$1\n").trim()
+    : note.text;
+  const lineCount = Math.max(1, lines.split("\n").length);
+  return {
+    id: `note-overlay-${note.id}`,
+    shape: "rect",
+    x: note.anchorPoint.x,
+    y: note.anchorPoint.y,
+    width: 560,
+    height: 18 + lineCount * 17,
+    angle: note.orientation,
+    zIndex: 4,
+    attrs: {
+      body: {
+        fill: "#fffdf5",
+        stroke: "#d0b46a",
+        strokeWidth: 1,
+        strokeDasharray: "4 3",
+        pointerEvents: "none",
+      },
+      label: {
+        text: lines,
+        fill: "#5f4b00",
+        fontFamily: "Segoe UI, Microsoft YaHei UI, sans-serif",
+        fontSize: 12,
+        fontWeight: 600,
+        refX: 8,
+        refY: 8,
+        textAnchor: "start",
+        textVerticalAnchor: "top",
+        pointerEvents: "none",
+      },
+    },
+    data: { wireDraft: true, noteOverlay: true },
   };
 }
 
@@ -401,6 +507,7 @@ function graphDocument(graph: Graph, base: SchematicDocument): SchematicDocument
   const edges: SchematicEdge[] = [];
   for (const edge of graph.getEdges()) {
     if (edge.getData<{ wireDraft?: boolean }>()?.wireDraft) continue;
+    if (edge.getData<SchematicEdge>()?.style === "FLIGHT") continue;
     const source = edge.getSource();
     const target = edge.getTarget();
     let persistedSource = persistedEndpoint(source);
@@ -422,11 +529,13 @@ function graphDocument(graph: Graph, base: SchematicDocument): SchematicDocument
       x: snapToElectricalGrid(point.x),
       y: snapToElectricalGrid(point.y),
     }));
+    const style = edge.getData<SchematicEdge>()?.style;
     edges.push({
       id: edge.id,
       source: persistedSource,
       target: persistedTarget,
       ...(vertices.length ? { vertices } : {}),
+      style: style === "REFERENCE" ? "REFERENCE" : "NORMAL",
     });
   }
   edges.sort((left, right) => left.id.localeCompare(right.id, "en", { numeric: true }));
@@ -443,13 +552,47 @@ function graphDocument(graph: Graph, base: SchematicDocument): SchematicDocument
 }
 
 function edgeConfig(edge: SchematicEdge) {
+  const flight = edge.style === "FLIGHT";
+  const reference = edge.style === "REFERENCE";
   return {
     id: edge.id,
     shape: "analog-wire",
     source: x6Endpoint(edge.source),
     target: x6Endpoint(edge.target),
     vertices: edge.vertices,
-    attrs: SELECTABLE_WIRE_ATTRS,
+    attrs: flight
+      ? {
+          ...SELECTABLE_WIRE_ATTRS,
+          wrap: {
+            stroke: "transparent",
+            strokeWidth: 0,
+            pointerEvents: "none",
+          },
+          selectionHalo: {
+            opacity: 0,
+            strokeWidth: 0,
+            pointerEvents: "none",
+          },
+          line: {
+            stroke: "transparent",
+            strokeWidth: 0,
+            opacity: 0,
+            visibility: "hidden",
+          },
+        }
+      : reference
+        ? {
+            ...SELECTABLE_WIRE_ATTRS,
+            line: {
+              stroke: VIRTUOSO_LIGHT_WIRE,
+              strokeWidth: 0.85,
+              strokeLinecap: "square",
+              strokeLinejoin: "miter",
+              vectorEffect: "non-scaling-stroke",
+            },
+          }
+        : SELECTABLE_WIRE_ATTRS,
+    data: { style: edge.style ?? "NORMAL" },
   };
 }
 
@@ -479,6 +622,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
   const loadingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const viewportRafRef = useRef<number | null>(null);
+  const loadFitRafRef = useRef<number | null>(null);
   const onDocumentChangeRef = useRef(onDocumentChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onNodeDoubleClickRef = useRef(onNodeDoubleClick);
@@ -539,7 +683,8 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       onViewportChangeRef.current?.({
         originX: origin.x - rect.left,
         originY: origin.y - rect.top,
-        scale: graph.scale().sx,
+        scale: graphViewportScale(graph),
+        rotation: graphViewportRotation(graph),
         width: rect.width,
         height: rect.height,
       });
@@ -778,7 +923,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     draft.edge.setTarget(lastFixed);
     draft.edge.setVertices(draft.fixedPoints.slice(1, -1));
     draft.targetMarker.position(lastFixed.x - 5, lastFixed.y - 5);
-    draft.targetMarker.attr({ body: { stroke: "#2b579a", fill: "#ffffff" } });
+    draft.targetMarker.attr({ body: { stroke: VIRTUOSO_LIGHT_WIRE, fill: "#ffffff" } });
   };
 
   const updateWireDraft = (point: Point) => {
@@ -793,8 +938,8 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     draft.targetMarker.position(candidate.point.x - 5, candidate.point.y - 5);
     draft.targetMarker.attr({
       body: {
-        stroke: candidate.kind === "grid" ? "#2b579a" : "#107c10",
-        fill: candidate.kind === "grid" ? "#ffffff" : "#e8f5e9",
+        stroke: candidate.kind === "grid" ? VIRTUOSO_LIGHT_WIRE : VIRTUOSO_LIGHT_DEVICE,
+        fill: candidate.kind === "grid" ? "#ffffff" : "#edf8f1",
       },
     });
     draft.cursorPoint = candidate.point;
@@ -900,7 +1045,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       .filter((node) => node.getData<{ markerOverlay?: boolean }>()?.markerOverlay)
       .forEach((node) => node.remove());
     for (const marker of document.markers) {
-      const color = marker.severity === "error" ? "#d13438" : "#c77700";
+      const color = marker.severity === "error" ? VIRTUOSO_LIGHT_TERMINAL : "#c77700";
       graph.addNode({
         id: `marker-overlay-${marker.id}`,
         shape: "rect",
@@ -952,11 +1097,11 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
         attrs: {
           body: { fill: "transparent", stroke: "transparent", pointerEvents: "none" },
           label: {
-            text: "×",
-            fill: "#d13438",
+            text: "NC",
+            fill: VIRTUOSO_LIGHT_TERMINAL,
             fontFamily: "Segoe UI, Microsoft YaHei UI, sans-serif",
-            fontSize: 18,
-            fontWeight: 500,
+            fontSize: 9,
+            fontWeight: 700,
             pointerEvents: "none",
           },
         },
@@ -965,7 +1110,16 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     }
   };
 
-  const loadDocument = (document: SchematicDocument) => {
+  const renderNoteOverlays = (document: SchematicDocument) => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    graph.getNodes()
+      .filter((node) => node.getData<{ noteOverlay?: boolean }>()?.noteOverlay)
+      .forEach((node) => node.remove());
+    for (const note of document.notes) graph.addNode(noteCanvasNode(note));
+  };
+
+  const loadDocument = (document: SchematicDocument, fitAfterLoad = true) => {
     const normalizedDocument = normalizeSchematicGeometry(document);
     const graph = graphRef.current;
     if (!graph) {
@@ -984,15 +1138,28 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       graph.addNode(createX6NodeMetadata(junctionCanvasNode(junction)));
     }
     for (const label of normalizedDocument.netLabels) {
-      graph.addNode(createX6NodeMetadata(netLabelCanvasNode(label)));
+      graph.addNode(createX6NodeMetadata(netLabelCanvasNode(
+        label,
+        shouldHideDuplicatePortLabel(label, normalizedDocument),
+      )));
     }
     for (const edge of normalizedDocument.edges) graph.addEdge(edgeConfig(edge));
+    renderNoteOverlays(normalizedDocument);
     renderMarkerOverlays(normalizedDocument);
     renderNoConnectOverlays(normalizedDocument);
     historyRef.current?.clean();
     loadingRef.current = false;
     onSelectionChangeRef.current?.(null);
     onDocumentChangeRef.current?.(normalizedDocument);
+    if (fitAfterLoad) {
+      if (loadFitRafRef.current !== null) cancelAnimationFrame(loadFitRafRef.current);
+      loadFitRafRef.current = requestAnimationFrame(() => {
+        loadFitRafRef.current = null;
+        fitView();
+      });
+    } else {
+      emitViewport();
+    }
   };
 
   const toggleNoConnect = (node: SchematicNode, portId: string, position: Point) => {
@@ -1081,6 +1248,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
           segmentIndex: String(segmentIndex),
           textAlignment: "start",
           objectType: "net-label",
+          displayHidden: "false",
         },
       };
       const node = graph.addNode(createX6NodeMetadata(labelData));
@@ -1107,9 +1275,58 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     emitDocument();
   };
 
+  const addSubcircuitTemplate = (kind: SubcircuitTemplateKind, position?: { x: number; y: number }) => {
+    const graph = graphRef.current;
+    const container = containerRef.current;
+    if (!graph || !container) return;
+    if (toolModeRef.current !== "select") applyToolMode("select", true);
+    const current = graphDocument(graph, baseDocumentRef.current);
+    let point = position;
+    if (!point) {
+      const rect = container.getBoundingClientRect();
+      const existingRecords = Array.isArray(current.extensions?.subcircuitTemplates)
+        ? current.extensions?.subcircuitTemplates as Array<{ kind?: unknown }>
+        : [];
+      const sameKindCount = existingRecords.filter((record) => record.kind === kind).length;
+      const column = sameKindCount % 2;
+      const row = Math.floor(sameKindCount / 2) % 3;
+      point = graph.clientToLocal(
+        rect.left + rect.width * (0.42 + column * 0.2),
+        rect.top + rect.height * (0.34 + row * 0.21),
+      );
+    }
+    loadDocument(placeHierarchicalTemplateInstance(current, kind, point).document, false);
+  };
+
+  const rotateViewBy = (deltaAngle: number) => {
+    const graph = graphRef.current;
+    const container = containerRef.current;
+    if (!graph || !container) return;
+    const center = graphContainerCenter(container);
+    graph.rotate(deltaAngle, center.x, center.y);
+    emitViewport();
+  };
+
+  const rotateView = () => {
+    rotateViewBy(90);
+  };
+
+  const resetViewRotation = () => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const currentRotation = graphViewportRotation(graph);
+    if (!currentRotation) return;
+    rotateViewBy(-currentRotation);
+  };
+
   const rotateSelected = () => {
+    const nodes = selectedNodes();
+    if (!nodes.length) {
+      rotateView();
+      return;
+    }
     runGraphBatch("rotate-origin", () => {
-      for (const node of selectedNodes()) {
+      for (const node of nodes) {
         const data = nodeSnapshot(node);
         const rotation = normalizeRotation(data.rotation + 90);
         refreshNode(node, { ...data, rotation });
@@ -1199,8 +1416,8 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     }
     graph.showGrid();
     graph.drawGrid(mode === "dot"
-      ? { type: "analog-major-dot", args: { color: "#a8adb3", thickness: 1.55 } }
-      : { type: "analog-major-mesh", args: { color: "#d7d7d7", thickness: 1 } });
+      ? { type: "analog-major-dot", args: { color: "#cfd7df", thickness: 1 } }
+      : { type: "analog-major-mesh", args: { color: "#e4e9ee", thickness: 1 } });
   };
 
   const copySelected = () => {
@@ -1208,6 +1425,86 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     const cells = selectedCells();
     if (!graph || !cells.length || !clipboardRef.current) return;
     clipboardRef.current.copy(cells);
+  };
+
+  const zoomBy = (factor: number) => {
+    const graph = graphRef.current;
+    const container = containerRef.current;
+    if (!graph || !container) return;
+    graph.zoomTo(nextCanvasZoomScale(graphViewportScale(graph), factor), {
+      minScale: CANVAS_MIN_SCALE,
+      maxScale: CANVAS_MAX_SCALE,
+      center: graphContainerCenter(container),
+    });
+    emitViewport();
+  };
+
+  const zoomTo = (scale: number) => {
+    const graph = graphRef.current;
+    const container = containerRef.current;
+    if (!graph || !container) return;
+    graph.zoomTo(clampCanvasScale(scale), {
+      minScale: CANVAS_MIN_SCALE,
+      maxScale: CANVAS_MAX_SCALE,
+      center: graphContainerCenter(container),
+    });
+    emitViewport();
+  };
+
+  const fitView = () => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const cells = graph.getCells().filter((cell) => !cell.getData<{ wireDraft?: boolean }>()?.wireDraft);
+    if (cells.length) graph.zoomToFit({ padding: 56, minScale: CANVAS_MIN_SCALE, maxScale: 1.1 });
+    else {
+      graph.zoomTo(1, { minScale: CANVAS_MIN_SCALE, maxScale: CANVAS_MAX_SCALE });
+      graph.centerPoint(0, 0);
+    }
+    emitViewport();
+  };
+
+  const centerSelection = () => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const cells = selectedCells().filter((cell) => !cell.getData<{ wireDraft?: boolean }>()?.wireDraft);
+    if (cells.length) {
+      const bbox = graph.getCellsBBox(cells);
+      graph.centerPoint(bbox.center.x, bbox.center.y);
+    } else {
+      const allCells = graph.getCells().filter((cell) => !cell.getData<{ wireDraft?: boolean }>()?.wireDraft);
+      if (allCells.length) graph.centerContent({ useCellGeometry: true, padding: 56 });
+      else graph.centerPoint(0, 0);
+    }
+    emitViewport();
+  };
+
+  const handleCanvasKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    const modified = event.ctrlKey || event.metaKey;
+    if (modified && (event.key === "+" || event.key === "=" || event.code === "NumpadAdd")) {
+      event.preventDefault();
+      zoomBy(CANVAS_ZOOM_FACTOR);
+      return;
+    }
+    if (modified && (event.key === "-" || event.key === "_" || event.code === "NumpadSubtract")) {
+      event.preventDefault();
+      zoomBy(1 / CANVAS_ZOOM_FACTOR);
+      return;
+    }
+    if (modified && (event.key === "0" || event.code === "Numpad0")) {
+      event.preventDefault();
+      fitView();
+      return;
+    }
+    if (!modified && !event.altKey && key === "f") {
+      event.preventDefault();
+      fitView();
+      return;
+    }
+    if (!modified && !event.altKey && key === "c") {
+      event.preventDefault();
+      centerSelection();
+    }
   };
 
   useEffect(() => {
@@ -1219,20 +1516,28 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
     const graph: Graph = new Graph({
       container,
       autoResize: true,
-      background: { color: "#ffffff" },
-      grid: { visible: true, size: ELECTRICAL_GRID_SIZE, type: "analog-major-dot", args: { color: "#a8adb3", thickness: 1.55 } },
-      panning: { enabled: true, eventTypes: ["rightMouseDown", "mouseWheel"] },
-      mousewheel: { enabled: true, modifiers: ["ctrl", "meta"], minScale: 0.35, maxScale: 2.5, factor: 1.08 },
+      background: { color: VIRTUOSO_DARK_CANVAS },
+      grid: { visible: true, size: ELECTRICAL_GRID_SIZE, type: "analog-major-dot", args: { color: VIRTUOSO_DARK_GRID, thickness: 1.25 } },
+      panning: { enabled: true, eventTypes: ["rightMouseDown", "mouseWheel", "mouseWheelDown"] },
+      mousewheel: {
+        enabled: true,
+        modifiers: ["ctrl", "meta"],
+        minScale: CANVAS_MIN_SCALE,
+        maxScale: CANVAS_MAX_SCALE,
+        factor: 1.08,
+        zoomAtMousePosition: true,
+      },
       // A plain click is reserved for the click-to-click wire tool; leaving
       // the magnet while pressed still preserves the familiar drag gesture.
       magnetThreshold: "onleave",
       interacting: () => {
         const selecting = toolModeRef.current === "select";
+        const wiring = toolModeRef.current === "wire";
         return {
           nodeMovable: selecting,
           // Keep magnet mouse-up events alive while a click-to-click draft is
           // active. validateMagnet still prevents a second drag draft.
-          magnetConnectable: !selecting,
+          magnetConnectable: wiring,
           edgeMovable: false,
           arrowheadMovable: false,
           vertexMovable: selecting,
@@ -1250,7 +1555,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
         allowNode: false,
         allowEdge: false,
         allowPort: true,
-        highlight: true,
+        highlight: false,
         anchor: "center",
         connectionPoint: "anchor",
         router: { name: "manhattan", args: WIRE_ROUTER_ARGS },
@@ -1274,8 +1579,8 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
           ),
       },
       highlighting: {
-        magnetAvailable: { name: "stroke", args: { padding: 1, attrs: { stroke: "#2b579a", strokeWidth: 1.2 } } },
-        magnetAdsorbed: { name: "stroke", args: { padding: 1, attrs: { stroke: "#107c10", strokeWidth: 1.6 } } },
+        magnetAvailable: { name: "stroke", args: { padding: 1, attrs: { stroke: VIRTUOSO_LIGHT_WIRE, strokeWidth: 1.2 } } },
+        magnetAdsorbed: { name: "stroke", args: { padding: 1, attrs: { stroke: VIRTUOSO_LIGHT_DEVICE, strokeWidth: 1.6 } } },
       },
     });
 
@@ -1361,7 +1666,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
           body: {
             fill: "#ffffff",
             fillOpacity: 0.92,
-            stroke: "#2b579a",
+            stroke: VIRTUOSO_LIGHT_WIRE,
             strokeWidth: 1.8,
             pointerEvents: "none",
           },
@@ -1380,7 +1685,7 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
           body: {
             fill: "#ffffff",
             fillOpacity: 0.9,
-            stroke: "#2b579a",
+            stroke: VIRTUOSO_LIGHT_WIRE,
             strokeWidth: 1.5,
             pointerEvents: "none",
           },
@@ -1525,7 +1830,6 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       edge.addTools([
         { name: "vertices", args: { snapRadius: ELECTRICAL_GRID_SIZE } },
         { name: "segments", args: { snapRadius: ELECTRICAL_GRID_SIZE } },
-        { name: "button-remove", args: { distance: 0.5 } },
       ]);
     });
     const clearDynamicNetHighlight = () => {
@@ -1712,15 +2016,13 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       emitDocument();
     });
 
-    const initialFit = window.setTimeout(() => {
-      graph.zoomToFit({ padding: 56, maxScale: 1.05 });
-      emitViewport();
-    }, 60);
+    const initialFit = window.setTimeout(fitView, 60);
     return () => {
       window.clearTimeout(initialFit);
       cancelWireDraft();
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       if (viewportRafRef.current !== null) cancelAnimationFrame(viewportRafRef.current);
+      if (loadFitRafRef.current !== null) cancelAnimationFrame(loadFitRafRef.current);
       graph.dispose();
       graphRef.current = null;
       historyRef.current = null;
@@ -1752,18 +2054,28 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
       addDevice(kind, graph.clientToLocal(clientX, clientY));
     },
+    addSubcircuitTemplate,
+    addSubcircuitTemplateAtClient: (kind, clientX, clientY) => {
+      const graph = graphRef.current;
+      const container = containerRef.current;
+      if (!graph || !container) return;
+      const rect = container.getBoundingClientRect();
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+      addSubcircuitTemplate(kind, graph.clientToLocal(clientX, clientY));
+    },
     rotateSelected,
+    rotateView,
+    resetViewRotation,
     mirrorSelected,
     deleteSelected,
     copySelected,
     undo: () => { historyRef.current?.undo(); emitDocument(); },
     redo: () => { historyRef.current?.redo(); emitDocument(); },
-    zoomIn: () => graphRef.current?.zoom(0.12),
-    zoomOut: () => graphRef.current?.zoom(-0.12),
-    fit: () => {
-      graphRef.current?.zoomToFit({ padding: 56, maxScale: 1.1 });
-      emitViewport();
-    },
+    zoomIn: () => zoomBy(CANVAS_ZOOM_FACTOR),
+    zoomOut: () => zoomBy(1 / CANVAS_ZOOM_FACTOR),
+    zoomTo,
+    fit: fitView,
+    centerSelection,
     setGridMode,
     setToolMode: (mode) => applyToolMode(mode, true),
     setWireDrawMode: (mode) => setWireDrawModeInternal(mode, true),
@@ -1821,9 +2133,11 @@ export const SchematicCanvas = forwardRef<SchematicCanvasHandle, SchematicCanvas
       className="schematic-canvas"
       data-testid="schematic-canvas"
       tabIndex={0}
+      onKeyDown={handleCanvasKeyDown}
       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
       onDrop={handleDrop}
       onMouseDown={() => containerRef.current?.focus({ preventScroll: true })}
+      onContextMenu={(event) => event.preventDefault()}
       onPointerMoveCapture={(event) => {
         const graph = graphRef.current;
         if (!graph) return;
